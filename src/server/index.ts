@@ -614,7 +614,7 @@ app.get('/web-bridge.js', (_req, res) => {
 });
 
 // 提供静态资源
-app.use(express.static(rendererPath));
+app.use(express.static(rendererPath, { index: false }));
 
 // 注入 bridge 脚本后返回 index.html
 app.get('*', (_req, res) => {
