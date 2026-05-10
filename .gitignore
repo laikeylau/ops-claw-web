@@ -63,3 +63,4 @@ credentials.json
 # Misc
 *.bak
 *.backup
+.gitnexus

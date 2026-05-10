@@ -11,9 +11,16 @@ const DEFAULT_CONFIG: SecurityAnalyzerConfig = {
 
 export class SecurityAnalyzer {
   private config: SecurityAnalyzerConfig;
+  /** 预排序的危险模式（构造时排序一次，避免每次 analyze 重复排序） */
+  private orderedDangerousPatterns: DangerousPattern[];
 
   constructor(config: Partial<SecurityAnalyzerConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
+    // 预排序：按风险等级从高到低
+    this.orderedDangerousPatterns = [...DANGEROUS_PATTERNS].sort((a, b) => {
+      const levels = [RiskLevel.CRITICAL, RiskLevel.HIGH, RiskLevel.MEDIUM, RiskLevel.LOW];
+      return levels.indexOf(a.level) - levels.indexOf(b.level);
+    });
   }
 
   /**
@@ -126,13 +133,7 @@ export class SecurityAnalyzer {
   }
 
   private matchDangerousPattern(command: string): DangerousPattern | null {
-    // 按风险等级从高到低匹配
-    const orderedPatterns = [...DANGEROUS_PATTERNS].sort((a, b) => {
-      const levels = [RiskLevel.CRITICAL, RiskLevel.HIGH, RiskLevel.MEDIUM, RiskLevel.LOW];
-      return levels.indexOf(a.level) - levels.indexOf(b.level);
-    });
-
-    return orderedPatterns.find(p => p.pattern.test(command)) || null;
+    return this.orderedDangerousPatterns.find(p => p.pattern.test(command)) || null;
   }
 
   private createSafeResult(command: string, description?: string): SecurityAnalysisResult {

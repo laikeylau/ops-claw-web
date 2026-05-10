@@ -25,6 +25,49 @@ export interface AIConfigItem {
   createdAt?: string;
 }
 
+/** AI 配置类型别名（供 Agent/TaskDecomposer 使用） */
+export type AIConfig = AIConfigItem;
+
+/** 聊天消息 */
+export interface ChatMessage {
+  id?: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp?: string;
+  type?: string;
+  meta?: Record<string, unknown>;
+}
+
+/** 命令历史记录 */
+export interface CommandHistory {
+  command: string;
+  output: string;
+  exitCode: number;
+  timestamp: string;
+  directory?: string;
+}
+
+/** 任务步骤 */
+export interface TaskStep {
+  timestamp: string;
+  action: 'intent' | 'command' | 'result' | 'analysis';
+  content: string;
+  command?: string;
+  result?: string;
+}
+
+/** 会话上下文 */
+export interface SessionContext {
+  currentDirectory?: string;
+  hostname?: string;
+  recentCommands: CommandHistory[];
+  taskHistory: TaskStep[];
+  environmentVars: Record<string, string>;
+  taskGoal?: string;
+  taskHistorySummary?: string;
+  lastExitCode?: number;
+}
+
 interface AppData {
   servers: ServerConfig[];
   aiConfigs: AIConfigItem[];  // 多个 AI 配置
@@ -52,6 +95,10 @@ const DEFAULT_DATA: AppData = {
 export class DatabaseManager {
   private dataPath: string;
   private data: AppData;
+  /** debounce 定时器：合并短时间内多次 saveData 为一次写入 */
+  private saveTimer: ReturnType<typeof setTimeout> | null = null;
+  /** debounce 延迟（ms） */
+  private readonly SAVE_DEBOUNCE_MS = 300;
 
   constructor() {
     const userDataPath = app.getPath('userData');
@@ -73,6 +120,35 @@ export class DatabaseManager {
   }
 
   private saveData(): void {
+    // Debounce: 合并 300ms 内的多次写入
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+    }
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = null;
+      try {
+        // 写入前备份（防止崩溃损坏）
+        const backupPath = this.dataPath + '.bak';
+        if (fs.existsSync(this.dataPath)) {
+          try {
+            fs.copyFileSync(this.dataPath, backupPath);
+          } catch { /* 备份失败不阻塞主流程 */ }
+        }
+        fs.writeFileSync(this.dataPath, JSON.stringify(this.data, null, 2), 'utf-8');
+      } catch (e) {
+        logError('database', '保存数据失败', serializeError(e));
+      }
+    }, this.SAVE_DEBOUNCE_MS);
+  }
+
+  /**
+   * 立即写入（应用退出时调用，确保数据不丢）
+   */
+  flush(): void {
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+    }
     try {
       fs.writeFileSync(this.dataPath, JSON.stringify(this.data, null, 2), 'utf-8');
     } catch (e) {
@@ -113,7 +189,8 @@ export class DatabaseManager {
 
   async deleteServer(id: number): Promise<void> {
     this.data.servers = this.data.servers.filter(s => s.id !== id);
-    delete this.data.messages[id];
+    // 删除该服务器关联的消息（使用 toString 作为 key）
+    delete this.data.messages[String(id)];
     await CredentialManager.deletePassword(`server_${id}`);
     this.saveData();
   }
@@ -315,8 +392,8 @@ export class DatabaseManager {
   }
 
   // 构建用于 AI 的历史摘要
-  buildHistorySummary(serverId: number): string {
-    const context = this.getContext(serverId);
+  buildHistorySummary(tabId: string): string {
+    const context = this.getContext(tabId);
     const parts: string[] = [];
 
     // 当前目录

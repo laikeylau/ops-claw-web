@@ -25,6 +25,7 @@ export interface AIDecomposeResult {
     expectedOutput?: string;
   }[];
   reasoning: string;
+  suggestedAgent?: string;
   tokenUsage?: { promptTokens: number; completionTokens: number };
 }
 
@@ -63,43 +64,82 @@ export interface AISummaryResult {
 }
 
 export class AIEngine {
+  /** Client 缓存：endpoint#apiKey → OpenAI 实例 */
+  private clientCache = new Map<string, OpenAI>();
+
+  /**
+   * 获取或创建 OpenAI Client（复用 HTTP 连接池）
+   */
+  private getClient(config: AIConfigItem): OpenAI {
+    const key = `${config.endpoint}#${config.apiKey || ''}`;
+    let client = this.clientCache.get(key);
+    if (!client) {
+      client = new OpenAI({
+        apiKey: config.apiKey,
+        baseURL: config.endpoint,
+      });
+      this.clientCache.set(key, client);
+    }
+    return client;
+  }
+
+  /**
+   * 清除 Client 缓存（配置变更时调用）
+   */
+  clearClientCache(): void {
+    this.clientCache.clear();
+  }
+
+  /**
+   * 构建公共上下文信息片段（提取重复逻辑）
+   */
+  private buildContextParts(context: AIContext): string[] {
+    const parts: string[] = [];
+    if (context.currentDirectory) {
+      parts.push(`当前工作目录: ${context.currentDirectory}`);
+    }
+    if (context.hostname) {
+      parts.push(`主机名: ${context.hostname}`);
+    }
+    if (context.recentCommands && context.recentCommands.length > 0) {
+      parts.push('最近执行的命令:');
+      for (const cmd of context.recentCommands.slice(-3)) {
+        const status = cmd.exitCode === 0 ? '成功' : '失败';
+        parts.push(`  - ${cmd.command} (退出码: ${cmd.exitCode}, 目录: ${cmd.directory || context.currentDirectory || '未知'})`);
+      }
+    }
+    if (context.taskGoal) {
+      parts.push(`当前任务目标: ${context.taskGoal}`);
+    }
+    if (context.taskHistorySummary) {
+      parts.push(`\n之前的操作历史:\n${context.taskHistorySummary}`);
+    }
+    if (context.history) {
+      parts.push(context.history);
+    }
+    return parts;
+  }
+
+  /**
+   * 构建 OS 相关提示
+   */
+  private getOsHint(os: string): string {
+    return os === 'windows'
+      ? '当前目标服务器是 Windows，请优先生成 PowerShell 命令，避免使用 Linux shell 语法、bash 工具链和 Unix 路径格式。'
+      : '当前目标服务器是 Linux，请生成标准 shell 命令，避免使用 PowerShell 语法。';
+  }
+
   async generateCommand(
     prompt: string,
     context: AIContext,
     config: AIConfigItem
   ): Promise<AIGenerateResult> {
     try {
-      const client = new OpenAI({
-        apiKey: config.apiKey,
-        baseURL: config.endpoint,
-      });
+      const client = this.getClient(config);
 
-      const commandStylePrompt = context.os === 'windows'
-        ? '4. 当前目标服务器是 Windows，请优先生成 PowerShell 命令，避免使用 Linux shell 语法、bash 工具链和 Unix 路径格式。'
-        : '4. 当前目标服务器是 Linux，请生成标准 shell 命令，避免使用 PowerShell 语法。';
+      const commandStylePrompt = `4. ${this.getOsHint(context.os || 'linux')}`;
 
-      // 构建上下文信息
-      const contextParts: string[] = [];
-      if (context.currentDirectory) {
-        contextParts.push(`当前工作目录: ${context.currentDirectory}`);
-      }
-      if (context.hostname) {
-        contextParts.push(`主机名: ${context.hostname}`);
-      }
-      if (context.recentCommands && context.recentCommands.length > 0) {
-        contextParts.push('最近执行的命令:');
-        for (const cmd of context.recentCommands.slice(-3)) {
-          const status = cmd.exitCode === 0 ? '成功' : '失败';
-          contextParts.push(`  - ${cmd.command} (退出码: ${cmd.exitCode}, 目录: ${cmd.directory || context.currentDirectory || '未知'})`);
-        }
-      }
-      if (context.taskGoal) {
-        contextParts.push(`当前任务目标: ${context.taskGoal}`);
-      }
-      if (context.history) {
-        contextParts.push(context.history);
-      }
-
+      const contextParts = this.buildContextParts(context);
       const contextInfo = contextParts.length > 0
         ? `\n当前环境上下文:\n${contextParts.join('\n')}`
         : '';
@@ -158,33 +198,13 @@ ${contextInfo}
     config: AIConfigItem
   ): Promise<AIAnalyzeResult> {
     try {
-      const client = new OpenAI({
-        apiKey: config.apiKey,
-        baseURL: config.endpoint,
-      });
+      const client = this.getClient(config);
 
       const commandStylePrompt = context.os === 'windows'
         ? '- 当前目标服务器是 Windows，如有后续命令请使用 PowerShell 语法'
         : '- 当前目标服务器是 Linux，如有后续命令请使用标准 shell 语法';
 
-      // 构建上下文信息
-      const contextParts: string[] = [];
-      if (context.currentDirectory) {
-        contextParts.push(`当前工作目录: ${context.currentDirectory}`);
-      }
-      if (context.hostname) {
-        contextParts.push(`主机名: ${context.hostname}`);
-      }
-      if (context.recentCommands && context.recentCommands.length > 0) {
-        contextParts.push('之前执行的命令:');
-        for (const cmd of context.recentCommands.slice(-2)) {
-          contextParts.push(`  - ${cmd.command} (退出码: ${cmd.exitCode})`);
-        }
-      }
-      if (context.taskGoal) {
-        contextParts.push(`当前任务目标: ${context.taskGoal}`);
-      }
-
+      const contextParts = this.buildContextParts(context);
       const contextInfo = contextParts.length > 0
         ? `\n当前环境上下文:\n${contextParts.join('\n')}`
         : '';
@@ -260,38 +280,13 @@ ${output}
     options: { allowedTools: string[]; maxSteps: number }
   ): Promise<AIDecomposeResult> {
     try {
-      const client = new OpenAI({
-        apiKey: config.apiKey,
-        baseURL: config.endpoint,
-      });
+      const client = this.getClient(config);
 
       const osHint = context.os === 'windows'
         ? '目标服务器是 Windows，请使用 PowerShell 命令。'
         : '目标服务器是 Linux，请使用标准 bash/shell 命令。';
 
-      // 构建上下文信息
-      const contextParts: string[] = [];
-      if (context.currentDirectory) {
-        contextParts.push(`当前工作目录: ${context.currentDirectory}`);
-      }
-      if (context.hostname) {
-        contextParts.push(`主机名: ${context.hostname}`);
-      }
-      if (context.taskGoal) {
-        contextParts.push(`当前任务目标: ${context.taskGoal}`);
-      }
-      // 任务历史摘要（最重要：包含之前任务的结果）
-      if (context.taskHistorySummary) {
-        contextParts.push(`\n之前的操作历史:\n${context.taskHistorySummary}`);
-      }
-      if (context.recentCommands && context.recentCommands.length > 0) {
-        contextParts.push('最近执行的命令:');
-        for (const cmd of context.recentCommands.slice(-3)) {
-          const status = cmd.exitCode === 0 ? '成功' : '失败';
-          contextParts.push(`  - ${cmd.command} (退出码: ${cmd.exitCode}, 目录: ${cmd.directory || context.currentDirectory || '未知'})`);
-        }
-      }
-
+      const contextParts = this.buildContextParts(context);
       const contextInfo = contextParts.length > 0
         ? `\n当前环境上下文:\n${contextParts.join('\n')}`
         : '';
@@ -369,10 +364,7 @@ ${options.allowedTools.map(t => `- ${t}`).join('\n')}
     config: AIConfigItem
   ): Promise<AISummaryResult> {
     try {
-      const client = new OpenAI({
-        apiKey: config.apiKey,
-        baseURL: config.endpoint,
-      });
+      const client = this.getClient(config);
 
       // 构建历史内容（限制总长度避免 Token 过多）
       const maxHistoryLength = 3000; // 最大历史字符数

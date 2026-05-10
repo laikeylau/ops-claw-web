@@ -134,7 +134,7 @@ export class CompactEngine {
       console.log(`[CompactEngine] 使用 AI 智能摘要，共 ${stepsToSummarize.length} 个步骤`);
 
       try {
-        const aiResult = await this.aiEngine.generateContextSummary(
+        const aiResult = await this.aiEngine!.generateContextSummary(
           {
             taskHistory: stepsToSummarize.map(s => ({
               action: s.action,
@@ -161,7 +161,13 @@ export class CompactEngine {
           stepsSummary = (stepsSummary || '') + `\n关键发现: ${aiResult.keyFindings.join(', ')}`;
         }
 
-        // 追踪 AI 摘要的 Token 消耗（由调用方处理）
+        // 追踪 AI 摘要的 Token 消耗（直接计入预算）
+        if (aiResult.tokenUsage) {
+          this.budgetTracker.trackCompactCost(
+            aiResult.tokenUsage.promptTokens,
+            aiResult.tokenUsage.completionTokens
+          );
+        }
       } catch (e: any) {
         console.error('[CompactEngine] AI 摘要失败，使用正则摘要:', e.message);
         stepsSummary = this.summarizeSteps(stepsToSummarize);

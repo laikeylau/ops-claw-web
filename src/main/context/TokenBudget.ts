@@ -86,6 +86,12 @@ export class TokenBudgetTracker {
     this.inputUsed = Math.max(0, this.inputUsed - tokenReduction);
   }
 
+  /** 追踪压缩过程中的 AI 消耗（摘要生成消耗的 Token） */
+  trackCompactCost(inputTokens: number, outputTokens: number): void {
+    this.inputUsed += inputTokens;
+    this.outputUsed += outputTokens;
+  }
+
   /** 更新配置 */
   updateConfig(config: Partial<BudgetConfig>): void {
     this.config = { ...this.config, ...config };

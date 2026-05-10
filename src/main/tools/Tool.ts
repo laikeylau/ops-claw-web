@@ -31,8 +31,8 @@ export interface ToolMetadata {
   version?: string;
 }
 
-/** 工具接口定义 */
-export interface Tool<TInput extends ToolInput = ToolInput, TOutput extends ToolOutput = ToolOutput> {
+/** 工具接口定义（放宽 TInput 约束以兼容具体接口类型） */
+export interface Tool<TInput = ToolInput, TOutput extends ToolOutput = ToolOutput> {
   metadata: ToolMetadata;
   security: ToolSecurity;
 

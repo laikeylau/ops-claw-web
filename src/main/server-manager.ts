@@ -1,5 +1,7 @@
 import { Client, ClientChannel, ConnectConfig } from 'ssh2';
+import { randomUUID } from 'crypto';
 import { ServerConfig } from './database';
+import { logWarn } from './logger';
 
 export interface ConnectionResult {
   connectionId: string;
@@ -29,13 +31,13 @@ type ShellSession = {
 export class ServerManager {
   private connections = new Map<string, Client>();
   private shellSessions = new Map<string, ShellSession>();
-  private connectionCounter = 0;
-  private shellSessionCounter = 0;
+  /** 默认命令执行超时（ms）：60 秒 */
+  private readonly DEFAULT_EXEC_TIMEOUT = 60000;
 
   connect(server: ServerConfig): Promise<ConnectionResult> {
     return new Promise((resolve) => {
       const conn = new Client();
-      const connectionId = `conn_${++this.connectionCounter}`;
+      const connectionId = `conn_${randomUUID().slice(0, 8)}`;
 
       const config: ConnectConfig = {
         host: server.host,
@@ -63,7 +65,7 @@ export class ServerManager {
     });
   }
 
-  execute(connectionId: string, command: string): Promise<ExecuteResult> {
+  execute(connectionId: string, command: string, timeoutMs?: number): Promise<ExecuteResult> {
     return new Promise((resolve) => {
       const conn = this.connections.get(connectionId);
       if (!conn) {
@@ -71,9 +73,25 @@ export class ServerManager {
         return;
       }
 
+      const timeout = timeoutMs ?? this.DEFAULT_EXEC_TIMEOUT;
+      let settled = false;
+
+      // 超时定时器
+      const timer = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          logWarn('ssh', `命令执行超时 (${timeout}ms)`, { connectionId, command });
+          resolve({ success: false, error: `命令执行超时 (${timeout / 1000}秒)`, exitCode: -1 });
+        }
+      }, timeout);
+
       conn.exec(command, (err, stream) => {
         if (err) {
-          resolve({ success: false, error: err.message });
+          clearTimeout(timer);
+          if (!settled) {
+            settled = true;
+            resolve({ success: false, error: err.message });
+          }
           return;
         }
 
@@ -81,6 +99,9 @@ export class ServerManager {
         let stderr = '';
 
         stream.on('close', (code: number | boolean, signal?: string) => {
+          clearTimeout(timer);
+          if (settled) return;
+          settled = true;
           const exitCode = typeof code === 'number' ? code : 0;
           resolve({ 
             success: exitCode === 0, 
@@ -122,7 +143,7 @@ export class ServerManager {
           return;
         }
 
-        const sessionId = `shell_${++this.shellSessionCounter}`;
+        const sessionId = `shell_${randomUUID().slice(0, 8)}`;
         this.shellSessions.set(sessionId, { connectionId, channel });
 
         channel.on('data', (data: Buffer) => {

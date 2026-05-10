@@ -197,12 +197,17 @@ export class AgentCoordinator {
           aiConfig
         );
 
-        // 累计分析阶段的 Token 消耗
+        // 累计分析阶段的 Token 消耗（累加而非覆盖）
         if (analysis.tokenUsage) {
-          totalTokenUsage = {
-            promptTokens: analysis.tokenUsage.promptTokens,
-            completionTokens: analysis.tokenUsage.completionTokens
-          };
+          if (totalTokenUsage) {
+            totalTokenUsage.promptTokens += analysis.tokenUsage.promptTokens;
+            totalTokenUsage.completionTokens += analysis.tokenUsage.completionTokens;
+          } else {
+            totalTokenUsage = {
+              promptTokens: analysis.tokenUsage.promptTokens,
+              completionTokens: analysis.tokenUsage.completionTokens
+            };
+          }
         }
 
         result.analysis = {

@@ -4,7 +4,7 @@ import { RiskLevel } from '../types/security';
 
 /** 工具注册项 */
 interface ToolRegistryEntry {
-  tool: Tool;
+  tool: Tool<any, ToolOutput>;
   enabled: boolean;
   priority: number;
 }
@@ -18,7 +18,7 @@ export class ToolRegistry {
    * 注册工具
    */
   register(
-    tool: Tool,
+    tool: Tool<any, ToolOutput>,
     options?: { enabled?: boolean; priority?: number }
   ): void {
     const name = tool.metadata.name;
@@ -56,7 +56,7 @@ export class ToolRegistry {
   /**
    * 获取工具
    */
-  getTool(name: string, context?: ToolUseContext): Tool | null {
+  getTool(name: string, context?: ToolUseContext): Tool<any, ToolOutput> | null {
     const entry = this.tools.get(name);
     if (!entry || !entry.enabled) return null;
 
@@ -71,8 +71,8 @@ export class ToolRegistry {
   /**
    * 获取所有可用工具
    */
-  getAvailableTools(context?: ToolUseContext): Tool[] {
-    const available: Tool[] = [];
+  getAvailableTools(context?: ToolUseContext): Tool<any, ToolOutput>[] {
+    const available: Tool<any, ToolOutput>[] = [];
 
     for (const [_name, entry] of this.tools) {
       if (!entry.enabled) continue;
@@ -101,13 +101,13 @@ export class ToolRegistry {
   /**
    * 按分类获取工具
    */
-  getToolsByCategory(category: string): Tool[] {
+  getToolsByCategory(category: string): Tool<any, ToolOutput>[] {
     const names = this.categoryIndex.get(category);
     if (!names) return [];
 
     return Array.from(names)
       .map(name => this.tools.get(name)?.tool)
-      .filter((tool): tool is Tool => tool !== undefined);
+      .filter((tool): tool is Tool<any, ToolOutput> => tool !== undefined);
   }
 
   /**

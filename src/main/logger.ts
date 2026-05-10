@@ -28,7 +28,10 @@ const ensureLoggerReady = () => {
 };
 
 const appendLine = (filePath: string, line: string) => {
-  fs.appendFileSync(filePath, `${line}\n`, 'utf-8');
+  // 异步写入，避免阻塞主线程
+  fs.promises.appendFile(filePath, `${line}\n`, 'utf-8').catch(() => {
+    // 写入失败时静默处理（日志不应影响主流程）
+  });
 };
 
 export const logMessage = (level: LogLevel, scope: string, message: string, meta?: unknown) => {
