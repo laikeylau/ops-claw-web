@@ -54,6 +54,10 @@ export function registerServerIpcHandlers(deps: IpcDependencies): void {
         nproc
         echo '===TOTAL_MEM==='
         awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo
+        echo '===PROCESSES==='
+        ps aux --sort=-%cpu | head -21
+        echo '===DOCKER==='
+        docker ps --format '{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}' 2>/dev/null || echo 'DOCKER_NOT_AVAILABLE'
         echo '===MONITOR_END==='
       `;
       const result = await serverManager.execute(connectionId, monitorScript);
@@ -96,6 +100,24 @@ export function registerServerIpcHandlers(deps: IpcDependencies): void {
       const loadParts = section('LOAD').split(/\s+/);
       const osRaw = section('OS');
 
+      // 进程解析
+      const procRaw = section('PROCESSES');
+      const procLines = procRaw.split('\n').slice(1, 21);
+      const processes = procLines.map((line: string) => {
+        const parts = line.trim().split(/\s+/);
+        return { user: parts[0], pid: parts[1], cpu: parts[2], mem: parts[3], vsz: parts[4], rss: parts[5], stat: parts[7], command: parts.slice(10).join(' ') };
+      }).filter((p: any) => p.pid);
+
+      // Docker 解析
+      const dockerRaw = section('DOCKER');
+      let containers: any[] = [];
+      if (dockerRaw && !dockerRaw.includes('DOCKER_NOT_AVAILABLE')) {
+        containers = dockerRaw.split('\n').filter((l: string) => l.trim()).map((line: string) => {
+          const [id, name, image, status, ports] = line.split('\t');
+          return { id, name, image, status, ports: ports || '' };
+        });
+      }
+
       return {
         success: true,
         cpu: { usage: cpuUsage, cores: section('CPU_CORES') || 'N/A' },
@@ -109,6 +131,8 @@ export function registerServerIpcHandlers(deps: IpcDependencies): void {
           kernel: osRaw.split('\n').find((l: string) => !l.includes('=')) || 'N/A',
           uptime: section('UPTIME'),
         },
+        processes,
+        docker: { available: !dockerRaw.includes('DOCKER_NOT_AVAILABLE'), containers },
       };
     } catch (e: any) {
       return { success: false, error: e.message };

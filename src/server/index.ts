@@ -185,6 +185,10 @@ app.post('/api/ssh/monitor', authMiddleware, async (req, res) => {
       nproc
       echo '===TOTAL_MEM==='
       awk '/MemTotal/ {print int(\$2/1024)}' /proc/meminfo
+      echo '===PROCESSES==='
+      ps aux --sort=-%cpu | head -21
+      echo '===DOCKER==='
+      docker ps --format '{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}' 2>/dev/null || echo 'DOCKER_NOT_AVAILABLE'
       echo '===MONITOR_END==='
     `;
 
@@ -255,8 +259,30 @@ app.post('/api/ssh/monitor', authMiddleware, async (req, res) => {
     const hostnameRaw = section('HOSTNAME');
     const cpuCores = section('CPU_CORES') || 'N/A';
     const totalMem = section('TOTAL_MEM') || 'N/A';
-    const kernelVersion = section('OS').split('\n').find(l => !l.includes('=')) || 'N/A';
-    const osName = section('OS').split('\n').find(l => l.startsWith('PRETTY_NAME'))?.split('=')[1]?.replace(/"/g, '') || 'Linux';
+    const kernelVersion = section('OS').split('\n').find((l: string) => !l.includes('=')) || 'N/A';
+    const osName = section('OS').split('\n').find((l: string) => l.startsWith('PRETTY_NAME'))?.split('=')[1]?.replace(/"/g, '') || 'Linux';
+
+    // 进程解析
+    const procRaw = section('PROCESSES');
+    const procLines = procRaw.split('\n').slice(1, 21); // 跳过表头，取前 20 个
+    const processes = procLines.map((line: string) => {
+      const parts = line.trim().split(/\s+/);
+      return {
+        user: parts[0], pid: parts[1], cpu: parts[2], mem: parts[3],
+        vsz: parts[4], rss: parts[5], stat: parts[7],
+        command: parts.slice(10).join(' '),
+      };
+    }).filter((p: any) => p.pid);
+
+    // Docker 解析
+    const dockerRaw = section('DOCKER');
+    let containers: any[] = [];
+    if (dockerRaw && !dockerRaw.includes('DOCKER_NOT_AVAILABLE')) {
+      containers = dockerRaw.split('\n').filter((l: string) => l.trim()).map((line: string) => {
+        const [id, name, image, status, ports] = line.split('\t');
+        return { id, name, image, status, ports: ports || '' };
+      });
+    }
 
     res.json({
       success: true,
@@ -269,6 +295,8 @@ app.post('/api/ssh/monitor', authMiddleware, async (req, res) => {
       network: { rxBytes: netRxBytes, txBytes: netTxBytes, interface: netInterface },
       load: { '1m': load1, '5m': load5, '15m': load15 },
       system: { hostname: hostnameRaw, os: osName, kernel: kernelVersion, uptime: uptimeRaw },
+      processes,
+      docker: { available: !dockerRaw.includes('DOCKER_NOT_AVAILABLE'), containers },
     });
   } catch (e: any) {
     res.status(500).json({ error: e.message });

@@ -8,6 +8,8 @@ interface MonitorData {
   network: { rxBytes: number; txBytes: number; interface: string };
   load: { '1m': string; '5m': string; '15m': string };
   system: { hostname: string; os: string; kernel: string; uptime: string };
+  processes: { user: string; pid: string; cpu: string; mem: string; vsz: string; rss: string; stat: string; command: string }[];
+  docker: { available: boolean; containers: { id: string; name: string; image: string; status: string; ports: string }[] };
 }
 
 interface GeoData {
@@ -322,6 +324,78 @@ export function ServerMonitor({ connectionId, visible, onClose }: Props) {
                 </div>
               </div>
             </div>
+
+            {/* 进程列表 */}
+            {data.processes && data.processes.length > 0 && (
+              <div className="bg-[#313244] rounded-xl p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <span>⚙️</span>
+                  <span className="text-sm font-medium text-[#cdd6f4]">进程列表</span>
+                  <span className="text-xs text-[#6c7086]">（按 CPU 排序）</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-[#6c7086] border-b border-[#45475a]">
+                        <th className="text-left py-1.5 pr-3">用户</th>
+                        <th className="text-right py-1.5 px-2">PID</th>
+                        <th className="text-right py-1.5 px-2">CPU%</th>
+                        <th className="text-right py-1.5 px-2">内存%</th>
+                        <th className="text-right py-1.5 px-2">RSS</th>
+                        <th className="text-left py-1.5 pl-3">命令</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.processes.map((p, i) => (
+                        <tr key={p.pid + '-' + i} className="border-b border-[#45475a]/30 hover:bg-[#45475a]/20">
+                          <td className="py-1.5 pr-3 text-[#a6adc8]">{p.user}</td>
+                          <td className="py-1.5 px-2 text-right text-[#a6adc8] font-mono">{p.pid}</td>
+                          <td className={`py-1.5 px-2 text-right font-mono ${parseFloat(p.cpu) > 50 ? 'text-[#f38ba8]' : parseFloat(p.cpu) > 20 ? 'text-[#f9e2af]' : 'text-[#a6e3a1]'}`}>
+                            {p.cpu}%
+                          </td>
+                          <td className="py-1.5 px-2 text-right font-mono text-[#89b4fa]">{p.mem}%</td>
+                          <td className="py-1.5 px-2 text-right font-mono text-[#a6adc8]">{p.rss}</td>
+                          <td className="py-1.5 pl-3 text-[#cdd6f4] truncate max-w-xs" title={p.command}>{p.command}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Docker 容器 */}
+            {data.docker.available && (
+              <div className="bg-[#313244] rounded-xl p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <span>🐳</span>
+                  <span className="text-sm font-medium text-[#cdd6f4]">Docker 容器</span>
+                  <span className="px-2 py-0.5 rounded-full text-xs bg-[#89b4fa]/20 text-[#89b4fa]">{data.docker.containers.length} 个运行中</span>
+                </div>
+                {data.docker.containers.length === 0 ? (
+                  <div className="text-sm text-[#6c7086] py-2">没有正在运行的容器</div>
+                ) : (
+                  <div className="space-y-2">
+                    {data.docker.containers.map((c) => (
+                      <div key={c.id} className="flex items-center gap-3 p-2.5 rounded-lg bg-[#1e1e2e] hover:bg-[#181825] transition-colors">
+                        <div className="w-2 h-2 rounded-full bg-[#a6e3a1] shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-[#cdd6f4]">{c.name}</span>
+                            <span className="text-xs text-[#6c7086] font-mono">{c.id?.substring(0, 12)}</span>
+                          </div>
+                          <div className="text-xs text-[#a6adc8] mt-0.5">{c.image}</div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="text-xs text-[#a6e3a1]">{c.status}</div>
+                          {c.ports && <div className="text-xs text-[#6c7086] font-mono mt-0.5">{c.ports}</div>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
