@@ -89,16 +89,19 @@ function MetricCard({ label, value, sub, color, icon }: {
 export function ServerMonitor({ connectionId, visible, onClose }: Props) {
   const [data, setData] = useState<MonitorData | null>(null);
   const [geo, setGeo] = useState<GeoData | null>(null);
-  const [prevNet, setPrevNet] = useState<{ rx: number; tx: number; time: number } | null>(null);
+  const prevNetRef = useRef<{ rx: number; tx: number; time: number } | null>(null);
   const [netSpeed, setNetSpeed] = useState<{ rx: string; tx: string }>({ rx: '0 B/s', tx: '0 B/s' });
   const [error, setError] = useState<string | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const geoFetched = useRef(false);
+  const connectionIdRef = useRef(connectionId);
+  connectionIdRef.current = connectionId;
 
   const fetchMonitor = useCallback(async () => {
-    if (!connectionId || !window.electronAPI?.sshMonitor) return;
+    const cid = connectionIdRef.current;
+    if (!cid || !window.electronAPI?.sshMonitor) return;
     try {
-      const result = await window.electronAPI.sshMonitor(connectionId);
+      const result = await window.electronAPI.sshMonitor(cid);
       if (!result.success) {
         setError(result.error || '获取监控数据失败');
         return;
@@ -106,32 +109,34 @@ export function ServerMonitor({ connectionId, visible, onClose }: Props) {
       setError(null);
       setData(result);
 
-      // 计算网络速率
+      // 计算网络速率（使用 ref 避免触发重渲染循环）
       const now = Date.now();
-      if (prevNet && result.network) {
-        const dt = (now - prevNet.time) / 1000;
+      const prev = prevNetRef.current;
+      if (prev && result.network) {
+        const dt = (now - prev.time) / 1000;
         if (dt > 0) {
-          const rxRate = Math.max(0, (result.network.rxBytes - prevNet.rx) / dt);
-          const txRate = Math.max(0, (result.network.txBytes - prevNet.tx) / dt);
+          const rxRate = Math.max(0, (result.network.rxBytes - prev.rx) / dt);
+          const txRate = Math.max(0, (result.network.txBytes - prev.tx) / dt);
           setNetSpeed({ rx: formatBytes(rxRate) + '/s', tx: formatBytes(txRate) + '/s' });
         }
       }
       if (result.network) {
-        setPrevNet({ rx: result.network.rxBytes, tx: result.network.txBytes, time: now });
+        prevNetRef.current = { rx: result.network.rxBytes, tx: result.network.txBytes, time: now };
       }
     } catch (e: any) {
       setError(e.message);
     }
-  }, [connectionId, prevNet]);
+  }, []);
 
   const fetchGeo = useCallback(async () => {
-    if (!connectionId || !window.electronAPI?.sshGeoip || geoFetched.current) return;
+    const cid = connectionIdRef.current;
+    if (!cid || !window.electronAPI?.sshGeoip || geoFetched.current) return;
     geoFetched.current = true;
     try {
-      const result = await window.electronAPI.sshGeoip(connectionId);
+      const result = await window.electronAPI.sshGeoip(cid);
       if (result.success) setGeo(result);
     } catch { /* ignore */ }
-  }, [connectionId]);
+  }, []);
 
   useEffect(() => {
     if (!visible || !connectionId) {
@@ -139,7 +144,14 @@ export function ServerMonitor({ connectionId, visible, onClose }: Props) {
       return;
     }
 
+    // 重置状态（连接变化时）
     geoFetched.current = false;
+    prevNetRef.current = null;
+    setNetSpeed({ rx: '0 B/s', tx: '0 B/s' });
+    setData(null);
+    setGeo(null);
+    setError(null);
+
     fetchMonitor();
     fetchGeo();
     intervalRef.current = setInterval(fetchMonitor, 5000);
@@ -147,7 +159,7 @@ export function ServerMonitor({ connectionId, visible, onClose }: Props) {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [visible, connectionId, fetchMonitor, fetchGeo]);
+  }, [visible, connectionId]);
 
   if (!visible) return null;
 
