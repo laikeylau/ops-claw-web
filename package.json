@@ -9,11 +9,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/laikeylau/ops-claw.git"
+    "url": "https://github.com/laikeylau/ops-claw-web.git"
   },
-  "homepage": "https://github.com/laikeylau/ops-claw#readme",
+  "homepage": "https://github.com/laikeylau/ops-claw-web#readme",
   "bugs": {
-    "url": "https://github.com/laikeylau/ops-claw/issues"
+    "url": "https://github.com/laikeylau/ops-claw-web/issues"
   },
   "keywords": [
     "ssh",
