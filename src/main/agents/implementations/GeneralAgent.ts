@@ -10,6 +10,7 @@ const GENERAL_AGENT_CONFIG: AgentConfig = {
   
   allowedTools: [
     'ssh:execute',
+    'ssh:shell:execute',
     'ssh:connect',
     'ssh:disconnect',
     'file:read',
@@ -112,12 +113,21 @@ export class GeneralAgent implements Agent {
       }
     }
 
+    // 方案 B：有 shell 会话时，自动切换到 shell 执行（共享终端上下文）
+    if (task.toolName === 'ssh:execute' && context.shellSessionId) {
+      task.toolName = 'ssh:shell:execute';
+    }
+
     try {
       const input = task.toolInput || {};
       
       // 自动注入上下文中的必要参数
       if (task.toolName === 'ssh:execute' && !input.connectionId && context.connectionId) {
         input.connectionId = context.connectionId;
+      }
+      // shell 执行需要 shellSessionId
+      if (task.toolName === 'ssh:shell:execute' && !input.shellSessionId && context.shellSessionId) {
+        input.shellSessionId = context.shellSessionId;
       }
 
       const request = {

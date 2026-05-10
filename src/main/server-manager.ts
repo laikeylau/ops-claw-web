@@ -233,4 +233,92 @@ export class ServerManager {
       this.connections.delete(connectionId);
     }
   }
+
+  /**
+   * 通过交互式 shell 执行命令（方案 B：共享终端上下文）
+   * 用标记包裹命令，从 shell 输出中提取命令结果
+   */
+  executeViaShell(sessionId: string, command: string, timeoutMs?: number): Promise<ExecuteResult> {
+    return new Promise((resolve) => {
+      const session = this.shellSessions.get(sessionId);
+      if (!session) {
+        resolve({ success: false, error: 'Shell session not found' });
+        return;
+      }
+
+      const markerId = randomUUID().slice(0, 8);
+      const startMarker = `__SCMD_S_${markerId}__`;
+      const endMarker = `__SCMD_E_${markerId}__`;
+      const exitRegex = new RegExp(`__SCMD_X_(\\d+)_${markerId}__`);
+
+      let buffer = '';
+      let settled = false;
+      let exitCode = 0;
+
+      const timeout = timeoutMs ?? this.DEFAULT_EXEC_TIMEOUT;
+      const timer = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          cleanup();
+          logWarn('ssh', `Shell 命令执行超时 (${timeout}ms)`, { sessionId, command });
+          // 超时时也尝试提取已有的输出
+          const startIdx = buffer.indexOf(startMarker);
+          const partialOutput = startIdx !== -1
+            ? buffer.substring(startIdx + startMarker.length).replace(exitRegex, '').trim()
+            : '';
+          resolve({ success: false, error: `命令执行超时 (${timeout / 1000}秒)`, exitCode: -1, stdout: partialOutput });
+        }
+      }, timeout);
+
+      const onData = (data: Buffer) => {
+        if (settled) return;
+        buffer += data.toString();
+
+        // 提取退出码
+        const exitMatch = buffer.match(exitRegex);
+        if (exitMatch) {
+          exitCode = parseInt(exitMatch[1]);
+        }
+
+        // 检测结束标记
+        if (buffer.includes(endMarker)) {
+          if (!settled) {
+            settled = true;
+            clearTimeout(timer);
+            cleanup();
+
+            const startIdx = buffer.indexOf(startMarker);
+            const endIdx = buffer.indexOf(endMarker);
+            let rawOutput = '';
+
+            if (startIdx !== -1 && endIdx !== -1) {
+              rawOutput = buffer.substring(startIdx + startMarker.length, endIdx);
+            }
+
+            // 清理退出码标记行
+            rawOutput = rawOutput.replace(exitRegex, '').trim();
+
+            resolve({ success: exitCode === 0, stdout: rawOutput, exitCode });
+          }
+        }
+      };
+
+      const cleanup = () => {
+        session.channel.removeListener('data', onData);
+      };
+
+      session.channel.on('data', onData);
+
+      // 发送带标记的命令
+      const wrapped = [
+        `echo '${startMarker}'`,
+        command,
+        `__SCMD_X=$?`,
+        `echo "__SCMD_X_${'${__SCMD_X}'}_${markerId}__"`,
+        `echo '${endMarker}'`,
+      ].join(' ; ');
+
+      session.channel.write(wrapped + '\n');
+    });
+  }
 }

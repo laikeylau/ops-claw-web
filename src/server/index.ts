@@ -15,6 +15,7 @@ import { SecurityAnalyzer } from '../main/tools/SecurityAnalyzer';
 import { ToolRegistry } from '../main/tools/ToolRegistry';
 import { ToolExecutor } from '../main/tools/ToolExecutor';
 import { SSHExecuteTool } from '../main/tools/implementations/SSHExecuteTool';
+import { SSHShellExecuteTool } from '../main/tools/implementations/SSHShellExecuteTool';
 import { AIGenerateTool } from '../main/tools/implementations/AIGenerateTool';
 import { TokenBudgetTracker } from '../main/context/TokenBudget';
 import { CompactEngine } from '../main/context/CompactEngine';
@@ -50,6 +51,7 @@ const agentCoordinator = initializeAgentSystem(toolExecutor, toolRegistry, aiEng
 
 // 注册内置工具
 toolRegistry.register(new SSHExecuteTool(serverManager));
+toolRegistry.register(new SSHShellExecuteTool(serverManager));
 toolRegistry.register(new AIGenerateTool(aiEngine));
 
 // ===== Express 应用 =====

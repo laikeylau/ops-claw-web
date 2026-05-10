@@ -8,6 +8,7 @@ import { SecurityAnalyzer } from './tools/SecurityAnalyzer';
 import { ToolRegistry } from './tools/ToolRegistry';
 import { ToolExecutor } from './tools/ToolExecutor';
 import { SSHExecuteTool } from './tools/implementations/SSHExecuteTool';
+import { SSHShellExecuteTool } from './tools/implementations/SSHShellExecuteTool';
 import { AIGenerateTool } from './tools/implementations/AIGenerateTool';
 import { TokenBudgetTracker } from './context/TokenBudget';
 import { CompactEngine } from './context/CompactEngine';
@@ -86,6 +87,7 @@ app.whenReady().then(() => {
 
   // 注册内置工具
   toolRegistry.register(new SSHExecuteTool(serverManager));
+  toolRegistry.register(new SSHShellExecuteTool(serverManager));
   toolRegistry.register(new AIGenerateTool(aiEngine));
 
   // 初始化 Token 预算与压缩引擎
