@@ -200,103 +200,142 @@ app.post('/api/ssh/monitor', authMiddleware, async (req, res) => {
 
     const output = result.stdout || '';
 
-    // 解析各段输出
-    const section = (name: string) => {
-      const re = new RegExp(`===${name}===\\s*([\\s\S]*?)(?=\\n===|$)`);
-      const m = output.match(re);
-      return m ? m[1].trim() : '';
+    // 清理输出（去除 \r 回车符、ANSI 转义码）
+    const cleanOutput = output.replace(/\r/g, '').replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
+
+    // 按标记提取段落（比正则更可靠）
+    const getSection = (name: string) => {
+      const marker = `===${name}===`;
+      const start = cleanOutput.indexOf(marker);
+      if (start === -1) return '';
+      const contentStart = start + marker.length;
+      const nextMarker = cleanOutput.indexOf('\n===', contentStart);
+      return nextMarker === -1
+        ? cleanOutput.substring(contentStart).trim()
+        : cleanOutput.substring(contentStart, nextMarker).trim();
     };
 
-    // CPU 解析
-    const cpuRaw = section('CPU');
-    const cpuMatch = cpuRaw.match(/(\d+\.?\d*)\s*id/);
-    const cpuUsage = cpuMatch ? (100 - parseFloat(cpuMatch[1])).toFixed(1) : 'N/A';
+    // CPU 解析（兼容多种 top 输出格式）
+    let cpuUsage = '0.0';
+    let cpuCores = '0';
+    try {
+      const cpuRaw = getSection('CPU');
+      const cpuMatch = cpuRaw.match(/(\d+\.?\d*)\s*%?id/);
+      if (cpuMatch) cpuUsage = (100 - parseFloat(cpuMatch[1])).toFixed(1);
+      cpuCores = getSection('CPU_CORES').replace(/\D/g, '') || '0';
+    } catch { /* fallback */ }
 
-    // 内存解析
-    const memRaw = section('MEM');
-    const memLine = memRaw.split('\n').find(l => l.startsWith('Mem:')) || '';
-    const memParts = memLine.split(/\s+/);
-    const memTotal = parseInt(memParts[1]) || 0;
-    const memUsed = parseInt(memParts[2]) || 0;
-    const memFree = parseInt(memParts[3]) || 0;
-    const memAvailable = parseInt(memParts[6]) || memFree;
-    const memUsage = memTotal > 0 ? ((memUsed / memTotal) * 100).toFixed(1) : 'N/A';
+    // 内存解析（兼容不同 free 输出格式）
+    let memTotal = 0, memUsed = 0, memAvailable = 0, memUsage = '0.0', totalMem = '0';
+    try {
+      const memRaw = getSection('MEM');
+      const memLine = memRaw.split('\n').find((l: string) => l.trim().startsWith('Mem:')) || '';
+      if (memLine) {
+        const mp = memLine.trim().split(/\s+/);
+        memTotal = parseInt(mp[1]) || 0;
+        memUsed = parseInt(mp[2]) || 0;
+        memAvailable = parseInt(mp[6]) || parseInt(mp[3]) || 0;
+        memUsage = memTotal > 0 ? ((memUsed / memTotal) * 100).toFixed(1) : '0.0';
+      }
+      totalMem = getSection('TOTAL_MEM').replace(/\D/g, '') || String(memTotal);
+    } catch { /* fallback */ }
 
     // 磁盘解析
-    const diskRaw = section('DISK');
-    const diskLine = diskRaw.split('\n').find(l => l.startsWith('/')) || '';
-    const diskParts = diskLine.split(/\s+/);
-    const diskTotal = diskParts[1] || 'N/A';
-    const diskUsed = diskParts[2] || 'N/A';
-    const diskAvail = diskParts[3] || 'N/A';
-    const diskUsage = diskParts[4] || 'N/A';
+    let diskTotal = 'N/A', diskUsed = 'N/A', diskAvail = 'N/A', diskUsage = 'N/A';
+    try {
+      const diskRaw = getSection('DISK');
+      const diskLine = diskRaw.split('\n').find((l: string) => l.trim().startsWith('/')) || '';
+      if (diskLine) {
+        const dp = diskLine.trim().split(/\s+/);
+        diskTotal = dp[1] || 'N/A';
+        diskUsed = dp[2] || 'N/A';
+        diskAvail = dp[3] || 'N/A';
+        diskUsage = dp[4] || 'N/A';
+      }
+    } catch { /* fallback */ }
 
     // 网络解析
-    const netRaw = section('NET');
-    const netLines = netRaw.split('\n').filter(l => l.includes(':') && !l.includes('lo'));
     let netRxBytes = 0, netTxBytes = 0, netInterface = '';
-    for (const line of netLines) {
-      const parts = line.split(':');
-      if (parts.length >= 2) {
+    try {
+      const netRaw = getSection('NET');
+      for (const line of netRaw.split('\n')) {
+        if (!line.includes(':')) continue;
+        const parts = line.split(':');
         const iface = parts[0].trim();
-        if (iface === 'lo' || iface === 'docker0' || iface === 'br-') continue;
-        const stats = parts[1].trim().split(/\s+/);
-        netRxBytes += parseInt(stats[0]) || 0;
-        netTxBytes += parseInt(stats[8]) || 0;
-        if (!netInterface) netInterface = iface;
+        if (iface === 'lo' || iface === 'docker0' || iface.startsWith('br-') || iface.startsWith('veth')) continue;
+        const stats = (parts[1] || '').trim().split(/\s+/);
+        if (stats.length >= 10) {
+          netRxBytes += parseInt(stats[0]) || 0;
+          netTxBytes += parseInt(stats[8]) || 0;
+          if (!netInterface) netInterface = iface;
+        }
       }
-    }
+    } catch { /* fallback */ }
 
     // 负载解析
-    const loadRaw = section('LOAD');
-    const loadParts = loadRaw.split(/\s+/);
-    const load1 = loadParts[0] || 'N/A';
-    const load5 = loadParts[1] || 'N/A';
-    const load15 = loadParts[2] || 'N/A';
+    let load1 = '0', load5 = '0', load15 = '0';
+    try {
+      const lp = getSection('LOAD').split(/\s+/);
+      load1 = lp[0] || '0';
+      load5 = lp[1] || '0';
+      load15 = lp[2] || '0';
+    } catch { /* fallback */ }
 
-    // 系统信息
-    const uptimeRaw = section('UPTIME');
-    const hostnameRaw = section('HOSTNAME');
-    const cpuCores = section('CPU_CORES') || 'N/A';
-    const totalMem = section('TOTAL_MEM') || 'N/A';
-    const kernelVersion = section('OS').split('\n').find((l: string) => !l.includes('=')) || 'N/A';
-    const osName = section('OS').split('\n').find((l: string) => l.startsWith('PRETTY_NAME'))?.split('=')[1]?.replace(/"/g, '') || 'Linux';
+    // 系统信息解析
+    let hostnameRaw = '', osName = 'Linux', kernelVersion = 'N/A', uptimeRaw = '';
+    try {
+      hostnameRaw = getSection('HOSTNAME');
+      uptimeRaw = getSection('UPTIME');
+      const osRaw = getSection('OS');
+      if (osRaw) {
+        const osLines = osRaw.split('\n');
+        const prettyLine = osLines.find((l: string) => l.startsWith('PRETTY_NAME='));
+        if (prettyLine) osName = prettyLine.split('=')[1].replace(/"/g, '').trim();
+        const kernelLine = osLines.find((l: string) => l.trim() && !l.includes('='));
+        if (kernelLine) kernelVersion = kernelLine.trim();
+      }
+    } catch { /* fallback */ }
 
     // 进程解析
-    const procRaw = section('PROCESSES');
-    const procLines = procRaw.split('\n').slice(1, 21); // 跳过表头，取前 20 个
-    const processes = procLines.map((line: string) => {
-      const parts = line.trim().split(/\s+/);
-      return {
-        user: parts[0], pid: parts[1], cpu: parts[2], mem: parts[3],
-        vsz: parts[4], rss: parts[5], stat: parts[7],
-        command: parts.slice(10).join(' '),
-      };
-    }).filter((p: any) => p.pid);
+    let processes: any[] = [];
+    try {
+      const procRaw = getSection('PROCESSES');
+      if (procRaw) {
+        processes = procRaw.split('\n').slice(1, 21).map((line: string) => {
+          const parts = line.trim().split(/\s+/);
+          return {
+            user: parts[0] || '', pid: parts[1] || '', cpu: parts[2] || '0', mem: parts[3] || '0',
+            vsz: parts[4] || '0', rss: parts[5] || '0', stat: parts[7] || '',
+            command: parts.slice(10).join(' '),
+          };
+        }).filter((p: any) => p.pid && p.pid !== 'PID');
+      }
+    } catch { /* fallback */ }
 
     // Docker 解析
-    const dockerRaw = section('DOCKER');
     let containers: any[] = [];
-    if (dockerRaw && !dockerRaw.includes('DOCKER_NOT_AVAILABLE')) {
-      containers = dockerRaw.split('\n').filter((l: string) => l.trim()).map((line: string) => {
-        const [id, name, image, status, ports] = line.split('\t');
-        return { id, name, image, status, ports: ports || '' };
-      });
-    }
+    let dockerAvailable = false;
+    try {
+      const dockerRaw = getSection('DOCKER');
+      if (dockerRaw && !dockerRaw.includes('DOCKER_NOT_AVAILABLE') && !dockerRaw.includes('Cannot connect')) {
+        dockerAvailable = true;
+        containers = dockerRaw.split('\n').filter((l: string) => l.trim()).map((line: string) => {
+          const parts = line.split('\t');
+          return { id: parts[0] || '', name: parts[1] || '', image: parts[2] || '', status: parts[3] || '', ports: parts[4] || '' };
+        }).filter((c: any) => c.id);
+      }
+    } catch { /* fallback */ }
 
     res.json({
       success: true,
       cpu: { usage: cpuUsage, cores: cpuCores },
-      memory: {
-        total: memTotal, used: memUsed, available: memAvailable,
-        usage: memUsage, totalMB: totalMem
-      },
+      memory: { total: memTotal, used: memUsed, available: memAvailable, usage: memUsage, totalMB: totalMem },
       disk: { total: diskTotal, used: diskUsed, available: diskAvail, usage: diskUsage },
       network: { rxBytes: netRxBytes, txBytes: netTxBytes, interface: netInterface },
       load: { '1m': load1, '5m': load5, '15m': load15 },
       system: { hostname: hostnameRaw, os: osName, kernel: kernelVersion, uptime: uptimeRaw },
       processes,
-      docker: { available: !dockerRaw.includes('DOCKER_NOT_AVAILABLE'), containers },
+      docker: { available: dockerAvailable, containers },
     });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
