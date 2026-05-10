@@ -53,6 +53,7 @@ release/
 # User data (never commit!)
 ops-claw-data.json
 credentials.json
+data/
 
 # Claude Code memory (personal)
 .claude/

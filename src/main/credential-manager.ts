@@ -1,4 +1,14 @@
-import { app, safeStorage } from 'electron';
+let safeStorage: any = null;
+let app: any = null;
+
+try {
+  const electron = require('electron');
+  safeStorage = electron.safeStorage;
+  app = electron.app;
+} catch {
+  // 非 Electron 环境（如 Web 服务器模式），使用 fallback
+}
+
 import fs from 'fs';
 import path from 'path';
 import { logError, logWarn, serializeError } from './logger';
@@ -36,8 +46,18 @@ export class CredentialManager {
   private static initialize(): void {
     if (this.initialized) return;
 
-    const userDataPath = app.getPath('userData');
-    this.credentialsPath = path.join(userDataPath, 'credentials.json');
+    if (app) {
+      // Electron 环境
+      const userDataPath = app.getPath('userData');
+      this.credentialsPath = path.join(userDataPath, 'credentials.json');
+    } else {
+      // Web 服务器模式：使用当前目录下的 data 文件夹
+      const dataDir = path.join(process.cwd(), 'data');
+      if (!fs.existsSync(dataDir)) {
+        fs.mkdirSync(dataDir, { recursive: true });
+      }
+      this.credentialsPath = path.join(dataDir, 'credentials.json');
+    }
     this.credentials = this.loadCredentials();
     this.initialized = true;
   }
@@ -78,6 +98,7 @@ export class CredentialManager {
    * Linux 环境可能需要安装 libsecret
    */
   static isEncryptionAvailable(): boolean {
+    if (!safeStorage) return false;
     return safeStorage.isEncryptionAvailable();
   }
 
@@ -114,26 +135,25 @@ export class CredentialManager {
     this.initialize();
 
     if (!password) {
-      // 如果密码为空，删除该条目
       await this.deletePassword(serverId);
       return;
     }
 
-    if (!this.isEncryptionAvailable()) {
-      logError('credential-manager', '系统不支持安全凭证存储');
-      throw new Error('系统不支持安全存储，密码无法保存。请安装系统密钥管理服务后重试。');
+    if (this.isEncryptionAvailable() && safeStorage) {
+      try {
+        const encryptedBuffer = safeStorage.encryptString(password);
+        this.credentials[serverId] = encryptedBuffer.toString('base64');
+        this.saveCredentials();
+        return;
+      } catch (e) {
+        logError('credential-manager', '加密密码失败，回退到明文存储', serializeError(e));
+      }
     }
 
-    try {
-      // 使用 safeStorage 加密
-      const encryptedBuffer = safeStorage.encryptString(password);
-      // 将 Buffer 转为 Base64 字符串存储
-      this.credentials[serverId] = encryptedBuffer.toString('base64');
-      this.saveCredentials();
-    } catch (e) {
-      logError('credential-manager', '加密密码失败', serializeError(e));
-      throw new Error('密码加密失败');
-    }
+    // Fallback: 明文存储（Web 服务器模式）
+    logWarn('credential-manager', '使用明文存储密码（建议配置系统级磁盘加密）');
+    this.credentials[serverId] = `PLAINTEXT:${password}`;
+    this.saveCredentials();
   }
 
   /**

@@ -1,4 +1,10 @@
-import { app } from 'electron';
+let _app: any = null;
+try {
+  _app = require('electron').app;
+} catch {
+  // 非 Electron 环境
+}
+
 import fs from 'fs';
 import path from 'path';
 import { CredentialManager } from './credential-manager';
@@ -101,8 +107,16 @@ export class DatabaseManager {
   private readonly SAVE_DEBOUNCE_MS = 300;
 
   constructor() {
-    const userDataPath = app.getPath('userData');
-    this.dataPath = path.join(userDataPath, 'ops-claw-data.json');
+    if (_app) {
+      const userDataPath = _app.getPath('userData');
+      this.dataPath = path.join(userDataPath, 'ops-claw-data.json');
+    } else {
+      const dataDir = path.join(process.cwd(), 'data');
+      if (!fs.existsSync(dataDir)) {
+        fs.mkdirSync(dataDir, { recursive: true });
+      }
+      this.dataPath = path.join(dataDir, 'ops-claw-data.json');
+    }
     this.data = this.loadData();
   }
 

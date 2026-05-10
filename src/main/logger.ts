@@ -1,4 +1,10 @@
-import { app } from 'electron';
+let _app: any = null;
+try {
+  _app = require('electron').app;
+} catch {
+  // 非 Electron 环境
+}
+
 import fs from 'fs';
 import path from 'path';
 
@@ -21,7 +27,11 @@ const formatMeta = (meta?: unknown) => {
 const ensureLoggerReady = () => {
   if (logDirectory && appLogPath && errorLogPath) return;
 
-  logDirectory = path.join(app.getPath('userData'), 'logs');
+  if (_app) {
+    logDirectory = path.join(_app.getPath('userData'), 'logs');
+  } else {
+    logDirectory = path.join(process.cwd(), 'data', 'logs');
+  }
   appLogPath = path.join(logDirectory, 'app.log');
   errorLogPath = path.join(logDirectory, 'error.log');
   fs.mkdirSync(logDirectory, { recursive: true });

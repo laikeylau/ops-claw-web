@@ -1,4 +1,10 @@
-import { app } from 'electron';
+let _app: any = null;
+try {
+  _app = require('electron').app;
+} catch {
+  // 非 Electron 环境
+}
+
 import fs from 'fs';
 import path from 'path';
 
@@ -33,7 +39,9 @@ export class SessionLogger {
   private writeStream: fs.WriteStream | null = null;
 
   constructor() {
-    this.logDir = path.join(app.getPath('userData'), 'session-logs');
+    this.logDir = _app
+      ? path.join(_app.getPath('userData'), 'session-logs')
+      : path.join(process.cwd(), 'data', 'session-logs');
     if (!fs.existsSync(this.logDir)) {
       fs.mkdirSync(this.logDir, { recursive: true });
     }
