@@ -61,6 +61,17 @@ export class ServerManager {
         resolve({ connectionId, success: false, error: err.message });
       });
 
+      // 连接关闭时自动清理（防止僵尸连接）
+      conn.on('close', () => {
+        this.connections.delete(connectionId);
+        // 关闭该连接下的所有 shell 会话
+        for (const [sid, session] of this.shellSessions) {
+          if (session.connectionId === connectionId) {
+            this.shellSessions.delete(sid);
+          }
+        }
+      });
+
       conn.connect(config);
     });
   }
@@ -117,6 +128,15 @@ export class ServerManager {
 
         stream.stderr.on('data', (data: Buffer) => {
           stderr += data.toString();
+        });
+
+        // 关键：处理 exec 流错误（防止未处理异常导致进程崩溃）
+        stream.on('error', (err: Error) => {
+          clearTimeout(timer);
+          if (!settled) {
+            settled = true;
+            resolve({ success: false, error: err.message, exitCode: -1 });
+          }
         });
       });
     });
