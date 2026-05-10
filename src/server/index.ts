@@ -5,6 +5,9 @@ const { createServer } = require('http');
 const { Server: SocketServer } = require('socket.io');
 const path = require('path');
 const jwt = require('jsonwebtoken');
+
+// Bridge 脚本内容（编译时内联）
+const { WEB_BRIDGE_SCRIPT } = require('./bridge-content');
 import { ServerManager } from '../main/server-manager';
 import { AIEngine } from '../main/ai-engine';
 import { DatabaseManager } from '../main/database';
@@ -429,17 +432,12 @@ app.get('/api/health', (_req, res) => {
 
 // ===== 静态文件服务（前端） =====
 const rendererPath = path.join(__dirname, '../../out/renderer');
-
-// 读取 Web Bridge 脚本（从源码目录或编译输出目录）
 const fs = require('fs');
-let bridgeScript = '';
-for (const candidate of [
-  path.join(__dirname, 'web-bridge.js'),          // out/server/web-bridge.js
-  path.join(__dirname, '../../src/server/web-bridge.js'), // src/server/web-bridge.js
-]) {
-  try { bridgeScript = fs.readFileSync(candidate, 'utf-8'); break; } catch { /* try next */ }
-}
 
+// 直接使用编译内联的 bridge 脚本（无需读取外部文件）
+const bridgeScript = WEB_BRIDGE_SCRIPT;
+
+// 同时提供独立文件访问（可选）
 app.get('/web-bridge.js', (_req, res) => {
   res.type('application/javascript').send(bridgeScript);
 });
@@ -452,7 +450,8 @@ app.get('*', (_req, res) => {
   const htmlPath = path.join(rendererPath, 'index.html');
   try {
     let html = fs.readFileSync(htmlPath, 'utf-8');
-    html = html.replace('</head>', '<script src="/web-bridge.js"></script>\n</head>');
+    // 内联注入 bridge 脚本（确保在任何环境下都能工作）
+    html = html.replace('</head>', `<script>\n${bridgeScript}\n</script>\n</head>`);
     res.type('html').send(html);
   } catch (e) {
     res.status(500).send('前端文件未构建，请先运行 npm run build');

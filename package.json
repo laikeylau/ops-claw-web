@@ -36,7 +36,7 @@
     "package:mac": "electron-builder --mac",
     "package:linux": "electron-builder --linux",
     "dev:web": "npm run build && node out/server/index.js",
-    "build:web": "electron-vite build && tsc -p tsconfig.server.json && node -e \"require('fs').cpSync('src/server/web-bridge.js','out/server/web-bridge.js')\"",
+    "build:web": "electron-vite build && node scripts/gen-bridge.js && tsc -p tsconfig.server.json",
     "start:web": "node out/server/index.js"
   },
   "dependencies": {
