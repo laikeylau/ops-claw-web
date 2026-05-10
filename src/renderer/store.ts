@@ -54,6 +54,7 @@ interface AppState {
   clearMessages: (tabId: string) => void;
   addMessage: (tabId: string, message: Message) => void;
   updateLastMessage: (tabId: string, updates: Partial<Message>) => void;
+  updateMessageById: (tabId: string, messageId: string, updates: Partial<Message>) => void;
   setInputValue: (value: string) => void;
   setMode: (mode: 'manual' | 'ai') => void;
 }
@@ -106,6 +107,17 @@ export const useAppStore = create<AppState>((set) => ({
       const lastMessage = newMessages[newMessages.length - 1];
       newMessages[newMessages.length - 1] = { ...lastMessage, ...updates };
       return { ...tab, messages: newMessages };
+    })
+  })),
+  updateMessageById: (tabId: string, messageId: string, updates) => set((state) => ({
+    tabs: state.tabs.map(tab => {
+      if (tab.id !== tabId) return tab;
+      return {
+        ...tab,
+        messages: tab.messages.map(msg =>
+          msg.id === messageId ? { ...msg, ...updates } : msg
+        )
+      };
     })
   })),
   setInputValue: (value) => set({ inputValue: value }),

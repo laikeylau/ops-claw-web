@@ -108,6 +108,8 @@ function App() {
     addMessage,
     clearMessages,
     updateTab,
+    updateLastMessage,
+    updateMessageById,
     setInputValue,
     setMode,
   } = useAppStore();
@@ -143,6 +145,9 @@ function App() {
   const [decomposingTabIds, setDecomposingTabIds] = useState<Set<string>>(new Set());
   // 服务器监控面板
   const [showMonitor, setShowMonitor] = useState(false);
+  // Agent 执行过程追踪（用于在 AI 聊天中显示每步命令）
+  const processedSubTaskIds = useRef<Set<string>>(new Set());
+  const agentResultMsgIdRef = useRef<string | null>(null);
 
   // Sidebar Resize Logic
   const [sidebarWidth, setSidebarWidth] = useState(() => {
@@ -182,17 +187,43 @@ function App() {
       setPermissionMode(config.mode);
     }).catch(() => {});
 
-    // 监听 Agent 进度更新
+    // 监听 Agent 进度更新（方案 B：为每步完成的命令添加消息到 AI 聊天）
     const removeAgentListener = window.electronAPI.onAgentProgress(({ tabId, subTasks }) => {
       const state = useAppStore.getState();
-      const lastMsg = state.tabs.find(t => t.id === tabId)?.messages.slice(-1)[0];
-      if (lastMsg && lastMsg.agentResult) {
-        state.updateLastMessage(tabId, { 
-          agentResult: { 
-            ...lastMsg.agentResult, 
-            subTasks 
-          } 
-        });
+
+      // 更新 Agent 任务面板（使用 messageId 精确定位）
+      const agentMsgId = agentResultMsgIdRef.current;
+      if (agentMsgId) {
+        const agentMsg = state.tabs.find(t => t.id === tabId)?.messages.find(m => m.id === agentMsgId);
+        if (agentMsg?.agentResult) {
+          state.updateMessageById(tabId, agentMsgId, {
+            agentResult: { ...agentMsg.agentResult, subTasks }
+          });
+        }
+      }
+
+      // 为每步完成的命令添加消息到聊天
+      for (const task of subTasks) {
+        if (task.status === 'completed' && task.result && !processedSubTaskIds.current.has(task.id)) {
+          processedSubTaskIds.current.add(task.id);
+
+          const command = task.toolInput?.command || task.description;
+          const output = task.result?.stdout || task.result?.stderr || '';
+          const exitCode = task.result?.exitCode;
+
+          const msgId = `step-${task.id}-${Date.now()}`;
+          const msg = {
+            id: msgId,
+            role: 'system' as const,
+            content: `执行命令: ${command}`,
+            command,
+            output: output.substring(0, 3000),
+            exitCode,
+            timestamp: new Date(),
+          };
+          state.addMessage(tabId, msg);
+          window.electronAPI.messageSave(tabId, { ...msg, timestamp: msg.timestamp.toISOString() });
+        }
       }
     });
 
@@ -652,6 +683,9 @@ function App() {
         };
 
         addMessage(activeTabId, agentMessage);
+        // 存储 agent 消息 ID，用于进度更新时精确定位
+        agentResultMsgIdRef.current = agentMsgId;
+        processedSubTaskIds.current.clear();
         window.electronAPI.messageSave(activeTabId, {
           ...agentMessage,
           timestamp: agentMessage.timestamp.toISOString()
@@ -662,7 +696,7 @@ function App() {
           handleExecuteAgentPlan(activeTabId, agentMessage.agentResult.agentName, agentMessage.agentResult.subTasks, prompt);
         } else {
           // 如果没有子任务，则任务执行视为“成功”（仅为了结束加载状态）
-          useAppStore.getState().updateLastMessage(activeTabId, {
+          useAppStore.getState().updateMessageById(activeTabId, agentMsgId, {
             agentResult: {
               ...agentMessage.agentResult,
               success: true
@@ -716,11 +750,14 @@ function App() {
         userPrompt
       );
 
-      // 执行完成后，更新最后一条消息
-      useAppStore.getState().updateLastMessage(tabId, {
-        agentResult: result,
-        content: result.overallOutput || (result.success ? '任务执行成功。' : '任务执行遇到错误。')
-      });
+      // 执行完成后，更新 Agent 消息
+      const agentMsgId = agentResultMsgIdRef.current;
+      if (agentMsgId) {
+        useAppStore.getState().updateMessageById(tabId, agentMsgId, {
+          agentResult: result,
+          content: result.overallOutput || (result.success ? '任务执行成功。' : '任务执行遇到错误。')
+        });
+      }
 
       // 更新上下文：保存任务历史和结果摘要（使用后端方法自动限制长度）
       const completedTasks = result.subTasks.filter(t => t.status === 'completed' && t.result);
@@ -1150,7 +1187,7 @@ function App() {
 
             {tabs.map((tab) => {
               const isTabActive = activeTabId === tab.id;
-              const tabAiCards = tab.messages.filter((m) => m.role === 'assistant' || m.role === 'user');
+              const tabAiCards = tab.messages.filter((m) => m.role === 'assistant' || m.role === 'user' || (m.role === 'system' && m.command));
 
               return (
                 <div key={tab.id} className={`${isTabActive ? 'flex' : 'hidden'} flex-1 min-h-0 flex-col`}>
@@ -1190,13 +1227,14 @@ function App() {
                           const hasAgentResult = !!card.agentResult && card.agentResult.subTasks.length > 0;
                           const isUserMessage = card.role === 'user';
                           const isAIMessage = card.role === 'assistant';
+                          const isSystemMessage = card.role === 'system';
 
                           return (
-                            <div key={card.id} className={`rounded-2xl border shadow-sm overflow-hidden ${isUserMessage ? 'border-gray-200 bg-white' : 'border-blue-200 bg-blue-50/30'}`}>
+                            <div key={card.id} className={`rounded-2xl border shadow-sm overflow-hidden ${isUserMessage ? 'border-gray-200 bg-white' : isSystemMessage ? 'border-gray-300 bg-gray-50' : 'border-blue-200 bg-blue-50/30'}`}>
                               <div className="flex items-center justify-between gap-3 px-4 py-3 border-b bg-gray-50">
                                 <div className="flex items-center gap-2 min-w-0">
-                                  <span className={`text-sm font-semibold ${isUserMessage ? 'text-gray-800' : 'text-blue-800'}`}>
-                                    {isUserMessage ? '任务意图' : 'AI 响应'}
+                                  <span className={`text-sm font-semibold ${isUserMessage ? 'text-gray-800' : isSystemMessage ? 'text-gray-700' : 'text-blue-800'}`}>
+                                    {isUserMessage ? '任务意图' : isSystemMessage ? '💻 命令执行' : 'AI 响应'}
                                   </span>
                                   {card.agentResult && !isAnalyzing && (
                                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${card.agentResult.success ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
@@ -1243,6 +1281,25 @@ function App() {
                                 {isAIMessage && !hasAgentResult && (
                                   <div className="rounded-xl bg-blue-100/50 px-3 py-3 text-sm leading-6 text-gray-700">
                                     {card.content}
+                                  </div>
+                                )}
+
+                                {/* 系统消息：命令执行结果（方案 B） */}
+                                {isSystemMessage && (
+                                  <div className="space-y-2">
+                                    <div className="flex items-center gap-2">
+                                      <code className="text-sm font-mono bg-gray-800 text-green-400 px-3 py-1.5 rounded-lg">$ {card.command}</code>
+                                      {card.exitCode !== undefined && (
+                                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${card.exitCode === 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                                          {card.exitCode === 0 ? '✓ 成功' : `✕ 失败 (${card.exitCode})`}
+                                        </span>
+                                      )}
+                                    </div>
+                                    {card.output && (
+                                      <pre className="text-xs font-mono bg-gray-900 text-gray-200 rounded-lg p-3 overflow-x-auto max-h-60 overflow-y-auto whitespace-pre-wrap">
+                                        {card.output}
+                                      </pre>
+                                    )}
                                   </div>
                                 )}
                               </div>
