@@ -44,6 +44,9 @@ export class ServerManager {
         port: server.port || 22,
         username: server.username,
         readyTimeout: 10000,
+        // SSH 保活：每 15 秒发送 keepalive，最多 3 次无响应后断开
+        keepaliveInterval: 15000,
+        keepaliveCountMax: 3,
       };
 
       if (server.password) {
@@ -319,9 +322,31 @@ export class ServerManager {
 
       const cleanup = () => {
         session.channel.removeListener('data', onData);
+        session.channel.removeListener('close', onClose);
+        session.channel.removeListener('error', onError);
+      };
+
+      // 检测 shell 会话关闭或错误（连接断开等）
+      const onClose = () => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          cleanup();
+          resolve({ success: false, error: 'Shell 会话已关闭（连接可能已断开）', exitCode: -1, stdout: buffer });
+        }
+      };
+      const onError = (err: Error) => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          cleanup();
+          resolve({ success: false, error: `Shell 错误: ${err.message}`, exitCode: -1, stdout: buffer });
+        }
       };
 
       session.channel.on('data', onData);
+      session.channel.on('close', onClose);
+      session.channel.on('error', onError);
 
       // 发送带标记的命令
       const wrapped = [
