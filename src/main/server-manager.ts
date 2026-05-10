@@ -235,8 +235,24 @@ export class ServerManager {
   }
 
   /**
+   * 查找字符串中第二次出现的位置（跳过 shell 回显中的第一次）
+   */
+  private findNthOccurrence(str: string, search: string, n: number): number {
+    let pos = -1;
+    for (let i = 0; i < n; i++) {
+      pos = str.indexOf(search, pos + 1);
+      if (pos === -1) return -1;
+    }
+    return pos;
+  }
+
+  /**
    * 通过交互式 shell 执行命令（方案 B：共享终端上下文）
-   * 用标记包裹命令，从 shell 输出中提取命令结果
+   * 
+   * 关键：shell 会回显输入的命令，导致 marker 出现两次：
+   *   第一次：在回显的命令文本中（如 echo '__SCMD_S_xxx__'）
+   *   第二次：在实际的命令输出中（marker 被 echo 输出）
+   * 我们需要找第二次出现的 marker 来提取真实输出
    */
   executeViaShell(sessionId: string, command: string, timeoutMs?: number): Promise<ExecuteResult> {
     return new Promise((resolve) => {
@@ -261,11 +277,11 @@ export class ServerManager {
           settled = true;
           cleanup();
           logWarn('ssh', `Shell 命令执行超时 (${timeout}ms)`, { sessionId, command });
-          // 超时时也尝试提取已有的输出
-          const startIdx = buffer.indexOf(startMarker);
+          // 超时时尝试提取第二次出现的 marker 之后的输出
+          const startIdx = this.findNthOccurrence(buffer, startMarker, 2);
           const partialOutput = startIdx !== -1
             ? buffer.substring(startIdx + startMarker.length).replace(exitRegex, '').trim()
-            : '';
+            : buffer.substring(0, 500); // fallback: 返回前 500 字符
           resolve({ success: false, error: `命令执行超时 (${timeout / 1000}秒)`, exitCode: -1, stdout: partialOutput });
         }
       }, timeout);
@@ -274,28 +290,26 @@ export class ServerManager {
         if (settled) return;
         buffer += data.toString();
 
-        // 提取退出码
-        const exitMatch = buffer.match(exitRegex);
-        if (exitMatch) {
-          exitCode = parseInt(exitMatch[1]);
-        }
-
-        // 检测结束标记
-        if (buffer.includes(endMarker)) {
-          if (!settled) {
+        // 关键：找第二次出现的 endMarker（第一次在回显中，第二次在输出中）
+        const secondEnd = this.findNthOccurrence(buffer, endMarker, 2);
+        if (secondEnd !== -1) {
+          const secondStart = this.findNthOccurrence(buffer, startMarker, 2);
+          if (secondStart !== -1 && secondStart < secondEnd) {
             settled = true;
             clearTimeout(timer);
             cleanup();
 
-            const startIdx = buffer.indexOf(startMarker);
-            const endIdx = buffer.indexOf(endMarker);
-            let rawOutput = '';
+            // 提取两次 marker 之间的内容
+            let rawOutput = buffer.substring(secondStart + startMarker.length, secondEnd);
 
-            if (startIdx !== -1 && endIdx !== -1) {
-              rawOutput = buffer.substring(startIdx + startMarker.length, endIdx);
+            // 提取退出码（找第二次出现的 exit marker）
+            const secondExitStr = buffer.substring(secondStart, secondEnd);
+            const exitMatch = secondExitStr.match(exitRegex);
+            if (exitMatch) {
+              exitCode = parseInt(exitMatch[1]);
             }
 
-            // 清理退出码标记行
+            // 清理退出码标记
             rawOutput = rawOutput.replace(exitRegex, '').trim();
 
             resolve({ success: exitCode === 0, stdout: rawOutput, exitCode });
