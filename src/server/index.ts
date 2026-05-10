@@ -155,6 +155,149 @@ app.post('/api/ssh/disconnect', authMiddleware, (req, res) => {
   res.json({ success: true });
 });
 
+// ===== SSH 服务器监控 =====
+app.post('/api/ssh/monitor', authMiddleware, async (req, res) => {
+  try {
+    const { connectionId } = req.body;
+    if (!connectionId) { res.status(400).json({ error: '缺少 connectionId' }); return; }
+
+    // 批量执行监控命令（一次性获取所有数据，减少 RTT）
+    const monitorScript = `
+      echo '===MONITOR_START==='
+      echo '===CPU==='
+      top -bn1 | head -5
+      echo '===MEM==='
+      free -m
+      echo '===DISK==='
+      df -h /
+      echo '===NET==='
+      cat /proc/net/dev | head -4
+      echo '===LOAD==='
+      cat /proc/loadavg
+      echo '===UPTIME==='
+      uptime -p 2>/dev/null || uptime
+      echo '===OS==='
+      cat /etc/os-release 2>/dev/null | head -4
+      uname -r
+      echo '===HOSTNAME==='
+      hostname -f 2>/dev/null || hostname
+      echo '===CPU_CORES==='
+      nproc
+      echo '===TOTAL_MEM==='
+      awk '/MemTotal/ {print int(\$2/1024)}' /proc/meminfo
+      echo '===MONITOR_END==='
+    `;
+
+    const result = await serverManager.execute(connectionId, monitorScript);
+    if (!result.success) {
+      res.json({ success: false, error: result.error || '执行监控命令失败' });
+      return;
+    }
+
+    const output = result.stdout || '';
+
+    // 解析各段输出
+    const section = (name: string) => {
+      const re = new RegExp(`===${name}===\\s*([\\s\S]*?)(?=\\n===|$)`);
+      const m = output.match(re);
+      return m ? m[1].trim() : '';
+    };
+
+    // CPU 解析
+    const cpuRaw = section('CPU');
+    const cpuMatch = cpuRaw.match(/(\d+\.?\d*)\s*id/);
+    const cpuUsage = cpuMatch ? (100 - parseFloat(cpuMatch[1])).toFixed(1) : 'N/A';
+
+    // 内存解析
+    const memRaw = section('MEM');
+    const memLine = memRaw.split('\n').find(l => l.startsWith('Mem:')) || '';
+    const memParts = memLine.split(/\s+/);
+    const memTotal = parseInt(memParts[1]) || 0;
+    const memUsed = parseInt(memParts[2]) || 0;
+    const memFree = parseInt(memParts[3]) || 0;
+    const memAvailable = parseInt(memParts[6]) || memFree;
+    const memUsage = memTotal > 0 ? ((memUsed / memTotal) * 100).toFixed(1) : 'N/A';
+
+    // 磁盘解析
+    const diskRaw = section('DISK');
+    const diskLine = diskRaw.split('\n').find(l => l.startsWith('/')) || '';
+    const diskParts = diskLine.split(/\s+/);
+    const diskTotal = diskParts[1] || 'N/A';
+    const diskUsed = diskParts[2] || 'N/A';
+    const diskAvail = diskParts[3] || 'N/A';
+    const diskUsage = diskParts[4] || 'N/A';
+
+    // 网络解析
+    const netRaw = section('NET');
+    const netLines = netRaw.split('\n').filter(l => l.includes(':') && !l.includes('lo'));
+    let netRxBytes = 0, netTxBytes = 0, netInterface = '';
+    for (const line of netLines) {
+      const parts = line.split(':');
+      if (parts.length >= 2) {
+        const iface = parts[0].trim();
+        if (iface === 'lo' || iface === 'docker0' || iface === 'br-') continue;
+        const stats = parts[1].trim().split(/\s+/);
+        netRxBytes += parseInt(stats[0]) || 0;
+        netTxBytes += parseInt(stats[8]) || 0;
+        if (!netInterface) netInterface = iface;
+      }
+    }
+
+    // 负载解析
+    const loadRaw = section('LOAD');
+    const loadParts = loadRaw.split(/\s+/);
+    const load1 = loadParts[0] || 'N/A';
+    const load5 = loadParts[1] || 'N/A';
+    const load15 = loadParts[2] || 'N/A';
+
+    // 系统信息
+    const uptimeRaw = section('UPTIME');
+    const hostnameRaw = section('HOSTNAME');
+    const cpuCores = section('CPU_CORES') || 'N/A';
+    const totalMem = section('TOTAL_MEM') || 'N/A';
+    const kernelVersion = section('OS').split('\n').find(l => !l.includes('=')) || 'N/A';
+    const osName = section('OS').split('\n').find(l => l.startsWith('PRETTY_NAME'))?.split('=')[1]?.replace(/"/g, '') || 'Linux';
+
+    res.json({
+      success: true,
+      cpu: { usage: cpuUsage, cores: cpuCores },
+      memory: {
+        total: memTotal, used: memUsed, available: memAvailable,
+        usage: memUsage, totalMB: totalMem
+      },
+      disk: { total: diskTotal, used: diskUsed, available: diskAvail, usage: diskUsage },
+      network: { rxBytes: netRxBytes, txBytes: netTxBytes, interface: netInterface },
+      load: { '1m': load1, '5m': load5, '15m': load15 },
+      system: { hostname: hostnameRaw, os: osName, kernel: kernelVersion, uptime: uptimeRaw },
+    });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ===== SSH 获取服务器地理位置 =====
+app.post('/api/ssh/geoip', authMiddleware, async (req, res) => {
+  try {
+    const { connectionId } = req.body;
+    if (!connectionId) { res.status(400).json({ error: '缺少 connectionId' }); return; }
+
+    // 在远程服务器上查询 IP 地理信息
+    const result = await serverManager.execute(connectionId, 'curl -s --connect-timeout 5 ipinfo.io/json 2>/dev/null || echo "{}"');
+    if (!result.success) {
+      res.json({ success: false, error: result.error });
+      return;
+    }
+    try {
+      const geo = JSON.parse(result.stdout || '{}');
+      res.json({ success: true, ...geo });
+    } catch {
+      res.json({ success: false, error: '解析地理位置失败' });
+    }
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ===== 命令安全分析 =====
 app.post('/api/command/analyze', authMiddleware, (req, res) => {
   const { command } = req.body;

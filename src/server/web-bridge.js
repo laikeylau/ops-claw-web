@@ -105,6 +105,10 @@
     sshExecute: function (connectionId, command) { return apiPost('/ssh/execute', { connectionId: connectionId, command: command }); },
     sshDisconnect: function (connectionId) { return apiPost('/ssh/disconnect', { connectionId: connectionId }); },
 
+    // SSH 监控
+    sshMonitor: function (connectionId) { return apiPost('/ssh/monitor', { connectionId: connectionId }); },
+    sshGeoip: function (connectionId) { return apiPost('/ssh/geoip', { connectionId: connectionId }); },
+
     // SSH Shell（通过 Socket.io 懒加载）
     sshShellCreate: function (connectionId, cols, rows) {
       return getSocket().then(function (sock) {

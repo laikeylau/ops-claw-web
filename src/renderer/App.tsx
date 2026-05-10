@@ -9,6 +9,7 @@ import { PermissionModeSelector } from './components/PermissionModeSelector';
 import { ThemeToggle, initTheme } from './components/ThemeToggle';
 import { AgentTaskPanel } from './components/AgentTaskPanel';
 import { AIConfigDialog } from './components/AIConfigDialog';
+import { ServerMonitor } from './components/ServerMonitor';
 import './App.css';
 
 // 在 React 渲染前应用主题，避免闪白
@@ -140,6 +141,8 @@ function App() {
   // Agent 执行状态
   const [executingAgentTabIds, setExecutingAgentTabIds] = useState<Set<string>>(new Set());
   const [decomposingTabIds, setDecomposingTabIds] = useState<Set<string>>(new Set());
+  // 服务器监控面板
+  const [showMonitor, setShowMonitor] = useState(false);
 
   // Sidebar Resize Logic
   const [sidebarWidth, setSidebarWidth] = useState(() => {
@@ -1058,11 +1061,20 @@ function App() {
         />
       )}
 
+      {/* 服务器监控面板 */}
+      <ServerMonitor
+        connectionId={activeTab?.connectionId}
+        visible={showMonitor}
+        onClose={() => setShowMonitor(false)}
+      />
+
       <aside className="bg-gray-800 text-white flex flex-col shrink-0 relative" style={{ width: sidebarWidth }}>
         <header className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
           <h2 className="text-sm font-semibold tracking-wide">服务器</h2>
           <div className="flex gap-1.5">
             <ThemeToggle />
+            <button onClick={() => setShowMonitor(true)} title="服务器监控"
+              className="w-7 h-7 rounded-full bg-gray-600 hover:bg-blue-500 flex items-center justify-center text-xs transition-colors">📊</button>
             <button onClick={openSettings} title="AI 设置"
               className="w-7 h-7 rounded-full bg-gray-600 hover:bg-gray-500 flex items-center justify-center text-xs transition-colors">AI</button>
             <button onClick={openAddDialog}

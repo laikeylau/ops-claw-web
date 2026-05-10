@@ -11,6 +11,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sshConnect: (serverId: number) => ipcRenderer.invoke('ssh:connect', serverId),
   sshExecute: (connectionId: string, command: string) => ipcRenderer.invoke('ssh:execute', connectionId, command),
   sshDisconnect: (connectionId: string) => ipcRenderer.invoke('ssh:disconnect', connectionId),
+
+  // SSH 监控
+  sshMonitor: (connectionId: string) => ipcRenderer.invoke('ssh:monitor', connectionId),
+  sshGeoip: (connectionId: string) => ipcRenderer.invoke('ssh:geoip', connectionId),
   sshShellCreate: (connectionId: string, cols: number, rows: number) => ipcRenderer.invoke('ssh:shell:create', connectionId, cols, rows),
   sshShellWrite: (sessionId: string, data: string) => ipcRenderer.invoke('ssh:shell:write', sessionId, data),
   sshShellResize: (sessionId: string, cols: number, rows: number) => ipcRenderer.invoke('ssh:shell:resize', sessionId, cols, rows),
