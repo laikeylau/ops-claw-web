@@ -1,0 +1,30 @@
+# Ops Claw Web - Docker Compose 部署
+# 使用方法：
+#   1. 复制 .env.example 为 .env 并修改密码
+#   2. docker compose up -d
+#   3. 访问 http://localhost:3000
+
+services:
+  ops-claw:
+    build: .
+    container_name: ops-claw-web
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - PORT=3000
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-opsclaw2024}
+      - SESSION_SECRET=${SESSION_SECRET:-change-me-to-random-string}
+      - NODE_ENV=production
+    volumes:
+      - ops-claw-data:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health", "||", "exit", "1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  ops-claw-data:
+    driver: local
