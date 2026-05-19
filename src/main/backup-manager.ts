@@ -72,7 +72,7 @@ export class BackupManager {
     }
 
     this.autoBackupTimer = setInterval(() => {
-      this.createBackup('auto');
+      this.createBackup('full');
     }, this.config.interval * 60 * 60 * 1000);
   }
 
