@@ -13,8 +13,8 @@ COPY tailwind.config.js ./
 # 安装所有依赖（包括开发依赖）
 RUN npm ci --ignore-scripts 2>/dev/null || npm install --ignore-scripts
 
-# 构建项目
-RUN npm run build
+# 构建 Web 版本（包含服务器和前端）
+RUN npm run build:web
 
 # 清理开发依赖
 RUN npm prune --omit=dev
