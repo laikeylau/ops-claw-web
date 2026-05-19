@@ -1,4 +1,10 @@
-import { BrowserWindow } from 'electron';
+// 动态导入 electron（Web 服务器模式下不可用）
+let BrowserWindow: any = null;
+try {
+  BrowserWindow = require('electron').BrowserWindow;
+} catch {
+  // Web 服务器模式
+}
 
 /**
  * 流式响应管理器 - 支持 AI 响应的流式推送

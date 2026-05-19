@@ -1,6 +1,13 @@
 import fs from 'fs';
 import path from 'path';
-import { app } from 'electron';
+
+// 动态导入 electron（Web 服务器模式下不可用）
+let app: any = null;
+try {
+  app = require('electron').app;
+} catch {
+  // Web 服务器模式
+}
 
 /**
  * 会话录制器

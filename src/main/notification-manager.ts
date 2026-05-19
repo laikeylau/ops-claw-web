@@ -1,4 +1,14 @@
-import { BrowserWindow, Notification } from 'electron';
+// 动态导入 electron（Web 服务器模式下不可用）
+let BrowserWindow: any = null;
+let Notification: any = null;
+
+try {
+  const electron = require('electron');
+  BrowserWindow = electron.BrowserWindow;
+  Notification = electron.Notification;
+} catch {
+  // Web 服务器模式，electron 不可用
+}
 
 /**
  * 通知管理器
@@ -48,7 +58,7 @@ const DEFAULT_CONFIG: NotificationConfig = {
 export class NotificationManager {
   private config: NotificationConfig;
   private notifications: NotificationItem[] = [];
-  private mainWindow: BrowserWindow | null = null;
+  private mainWindow: any = null;  // 使用 any 类型避免 electron 依赖
   private readonly MAX_NOTIFICATIONS = 500;
 
   constructor(config?: Partial<NotificationConfig>) {
@@ -58,7 +68,7 @@ export class NotificationManager {
   /**
    * 设置主窗口引用
    */
-  setMainWindow(window: BrowserWindow | null): void {
+  setMainWindow(window: any | null): void {
     this.mainWindow = window;
   }
 
