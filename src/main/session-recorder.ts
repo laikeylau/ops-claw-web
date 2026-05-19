@@ -64,7 +64,9 @@ export class SessionRecorder {
 
   constructor(config?: Partial<RecordingConfig>) {
     this.config = { ...DEFAULT_CONFIG, ...config };
-    this.recordingsDir = path.join(app.getPath('userData'), this.config.recordingsDir);
+    // Web 服务器模式下使用环境变量或默认路径
+    const dataDir = app ? app.getPath('userData') : (process.env.DATA_DIR || '/app/data');
+    this.recordingsDir = path.join(dataDir, this.config.recordingsDir);
     
     // 确保目录存在
     if (!fs.existsSync(this.recordingsDir)) {

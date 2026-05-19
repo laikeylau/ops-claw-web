@@ -60,8 +60,8 @@ export class BackupManager {
   constructor(config?: Partial<BackupConfig>) {
     this.config = { ...DEFAULT_CONFIG, ...config };
     
-    // 获取数据目录
-    this.dataDir = app.getPath('userData');
+    // 获取数据目录（Web 服务器模式下使用环境变量或默认路径）
+    this.dataDir = app ? app.getPath('userData') : (process.env.DATA_DIR || '/app/data');
     this.backupDir = path.join(this.dataDir, this.config.backupDir);
     
     // 确保备份目录存在
