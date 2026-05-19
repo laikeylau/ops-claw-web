@@ -2,12 +2,22 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# 安装生产依赖
+# 复制源代码和配置文件
 COPY package.json package-lock.json* ./
-RUN npm ci --omit=dev --ignore-scripts 2>/dev/null || npm install --omit=dev --ignore-scripts
+COPY tsconfig*.json ./
+COPY src/ ./src/
+COPY electron.vite.config.ts ./
+COPY postcss.config.js ./
+COPY tailwind.config.js ./
 
-# 复制构建产物
-COPY out/ ./out/
+# 安装所有依赖（包括开发依赖）
+RUN npm ci --ignore-scripts 2>/dev/null || npm install --ignore-scripts
+
+# 构建项目
+RUN npm run build
+
+# 清理开发依赖
+RUN npm prune --omit=dev
 
 # 创建数据目录
 RUN mkdir -p /app/data
