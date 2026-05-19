@@ -6,6 +6,7 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 COPY tsconfig*.json ./
 COPY src/ ./src/
+COPY scripts/ ./scripts/
 COPY electron.vite.config.ts ./
 COPY postcss.config.js ./
 COPY tailwind.config.js ./
