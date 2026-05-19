@@ -49,6 +49,50 @@ type AIRequestCard = {
 
 const WORKSPACE_STORAGE_KEY = 'ops-claw-workspace';
 const AI_OUTPUT_PREVIEW_LINES = 8;
+
+/**
+ * 简单任务模式 - 直接执行，不需要 AI 分解
+ * 这些请求直接映射到命令，跳过 Agent 分解节省 token
+ */
+const SIMPLE_TASK_PATTERNS: Array<{ pattern: RegExp; command: string }> = [
+  // Docker 常用
+  { pattern: /查看.*docker.*容器|docker.*容器.*列表|列出.*容器/i, command: 'docker ps -a' },
+  { pattern: /查看.*docker.*镜像|docker.*镜像.*列表|列出.*镜像/i, command: 'docker images' },
+  { pattern: /docker.*版本|查看.*docker.*版本/i, command: 'docker version' },
+  { pattern: /docker.*信息|查看.*docker.*信息/i, command: 'docker info' },
+  // 系统信息
+  { pattern: /查看.*磁盘|磁盘.*使用|磁盘.*空间/i, command: 'df -h' },
+  { pattern: /查看.*内存|内存.*使用|内存.*占用/i, command: 'free -h' },
+  { pattern: /查看.*cpu|cpu.*使用|cpu.*占用/i, command: 'top -bn1 | head -20' },
+  { pattern: /系统.*信息|查看.*系统/i, command: 'uname -a' },
+  { pattern: /查看.*进程|进程.*列表/i, command: 'ps aux | head -20' },
+  { pattern: /当前.*目录|查看.*目录|列出.*文件/i, command: 'ls -la' },
+  // 网络
+  { pattern: /查看.*网络|网络.*接口|ip.*地址/i, command: 'ip addr' },
+  { pattern: /查看.*端口|监听.*端口/i, command: 'netstat -tlnp' },
+  // 服务
+  { pattern: /查看.*服务|运行.*服务/i, command: 'systemctl list-units --type=service --state=running' },
+  // Git
+  { pattern: /git.*状态|查看.*git/i, command: 'git status' },
+  { pattern: /git.*日志|git.*记录/i, command: 'git log --oneline -10' },
+  // 登录
+  { pattern: /查看.*登录|最近.*登录/i, command: 'last -10' },
+  { pattern: /查看.*日志|系统.*日志/i, command: 'tail -100 /var/log/syslog' },
+];
+
+/**
+ * 检测是否为简单任务（直接执行命令，不调用 AI）
+ */
+function detectSimpleTask(prompt: string): string | null {
+  const normalized = prompt.trim().toLowerCase();
+  for (const { pattern, command } of SIMPLE_TASK_PATTERNS) {
+    if (pattern.test(normalized)) {
+      return command;
+    }
+  }
+  return null;
+}
+
 const AI_QUICK_PROMPTS: Record<'linux' | 'windows', string[]> = {
   linux: [
     '查看系统信息',
@@ -217,7 +261,7 @@ function App() {
             role: 'system' as const,
             content: `执行命令: ${command}`,
             command,
-            output: output.substring(0, 3000),
+            output: output.substring(0, 1000),  // 减少输出存储（原3000），节省内存和 token
             exitCode,
             timestamp: new Date(),
           };
@@ -644,6 +688,38 @@ function App() {
     try {
       if (mode === 'ai') {
         setCurrentPrompt(prompt);
+
+        // 快速路径：检测简单任务，直接执行命令（跳过 AI 分解，节省 token）
+        const simpleCommand = detectSimpleTask(prompt);
+        if (simpleCommand) {
+          const aiMsgId = Date.now().toString() + '-ai';
+          addMessage(activeTabId, {
+            id: aiMsgId,
+            role: 'assistant' as const,
+            content: `执行命令: ${simpleCommand}`,
+            command: simpleCommand,
+            timestamp: new Date()
+          });
+          window.electronAPI.messageSave(activeTabId, {
+            id: aiMsgId,
+            role: 'assistant',
+            content: `执行命令: ${simpleCommand}`,
+            command: simpleCommand,
+            timestamp: new Date().toISOString()
+          });
+
+          // 直接执行命令
+          await executeCommandAndAnalyze(
+            activeTabId,
+            activeTab.connectionId,
+            simpleCommand,
+            prompt,
+            activeTab.serverType,
+            true
+          );
+          return;
+        }
+
         setDecomposingTabIds(prev => new Set(prev).add(activeTabId));
 
         try {

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { useMemo } from 'react';
 
 interface ServerConfig {
   id: number;
@@ -19,6 +20,51 @@ interface Tab {
   connectionId?: string;
   shellSessionId?: string;
   shellStatus?: 'idle' | 'creating' | 'ready' | 'closed' | 'error';
+}
+
+/**
+ * 优化的选择器 hooks - 避免不必要的重渲染
+ * 只有当真正使用的状态变化时才触发重渲染
+ */
+export function useActiveTab() {
+  const activeTabId = useAppStore(state => state.activeTabId);
+  const tabs = useAppStore(state => state.tabs);
+  return useMemo(() => tabs.find(t => t.id === activeTabId), [tabs, activeTabId]);
+}
+
+export function useActiveTabMessages() {
+  const activeTab = useActiveTab();
+  return activeTab?.messages || [];
+}
+
+export function useIsConnected() {
+  const activeTab = useActiveTab();
+  return activeTab?.isConnected || false;
+}
+
+export function useShellStatus() {
+  const activeTab = useActiveTab();
+  return activeTab?.shellStatus || 'idle';
+}
+
+export function useMode() {
+  return useAppStore(state => state.mode);
+}
+
+export function useServers() {
+  return useAppStore(state => state.servers);
+}
+
+export function useTabs() {
+  return useAppStore(state => state.tabs);
+}
+
+export function useActiveTabId() {
+  return useAppStore(state => state.activeTabId);
+}
+
+export function useInputValue() {
+  return useAppStore(state => state.inputValue);
 }
 
 interface Message {

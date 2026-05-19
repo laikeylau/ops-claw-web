@@ -19,6 +19,16 @@ export interface ServerConfig {
   password?: string;
   privateKey?: string;
   type: 'linux' | 'windows';
+  connectionType?: 'ssh' | 'rdp';  // 连接类型：SSH 或 RDP
+  rdpConfig?: {
+    width?: number;
+    height?: number;
+    colorDepth?: number;
+    audioRedirection?: boolean;
+    clipboardRedirection?: boolean;
+    driveRedirection?: boolean;
+    securityLayer?: 'rdp' | 'tls' | 'nla';
+  };
 }
 
 export interface AIConfigItem {
@@ -51,6 +61,45 @@ export interface CommandHistory {
   exitCode: number;
   timestamp: string;
   directory?: string;
+}
+
+/** 简单命令模式 - 不需要 AI 分析的命令 */
+const SIMPLE_COMMAND_PATTERNS: RegExp[] = [
+  // 查看类
+  /^ls(\s|$)/, /^ll(\s|$)/, /^la(\s|$)/, /^pwd$/, /^whoami$/, /^hostname$/, /^date$/, /^uptime$/,
+  /^cat\s+/, /^head\s+/, /^tail\s+/, /^wc\s+/, /^file\s+/, /^stat\s+/,
+  /^echo\s+/, /^printf\s+/, /^true$/, /^false$/, /^id$/, /^uname(\s|$)/,
+  // Docker 查看
+  /^docker\s+ps(\s|$)/, /^docker\s+images(\s|$)/, /^docker\s+version$/, /^docker\s+info$/,
+  /^docker\s+logs\s+/, /^docker\s+inspect\s+/, /^docker\s+stats(\s|$)/,
+  // 系统查看
+  /^top\s*-b/, /^htop$/, /^free(\s|$)/, /^df(\s|$)/, /^du\s+/, /^mount$/, /^env$/, /^set$/,
+  /^ps\s+/, /^pgrep\s+/, /^lsof(\s|$)/, /^netstat\s+/, /^ss\s+/, /^ip\s+addr/,
+  // 网络查看
+  /^ping\s+/, /^curl\s+/, /^wget\s+/, /^dig\s+/, /^nslookup\s+/, /^traceroute\s+/,
+  // Git 查看
+  /^git\s+status$/, /^git\s+log/, /^git\s+diff/, /^git\s+branch/, /^git\s+remote/,
+  // 文件查找
+  /^find\s+/, /^locate\s+/, /^which\s+/, /^whereis\s+/, /^type\s+/,
+  /^grep\s+/, /^egrep\s+/, /^fgrep\s+/,
+];
+
+/**
+ * 判断是否为简单/信息类命令（不需要 AI 分析结果）
+ * 这类命令通常只是查看信息，成功执行即可，无需额外分析
+ */
+export function isSimpleCommand(command: string): boolean {
+  const trimmed = command.trim();
+  // 多命令组合不算简单
+  if (trimmed.includes('&&') || trimmed.includes('||') || trimmed.includes(';')) {
+    return false;
+  }
+  // 复杂管道不算简单
+  const pipeCount = (trimmed.match(/\|/g) || []).length;
+  if (pipeCount > 1) {
+    return false;
+  }
+  return SIMPLE_COMMAND_PATTERNS.some(pattern => pattern.test(trimmed));
 }
 
 /** 任务步骤 */
@@ -105,6 +154,9 @@ export class DatabaseManager {
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   /** debounce 延迟（ms） */
   private readonly SAVE_DEBOUNCE_MS = 300;
+  /** AI 配置缓存（避免每次都从 CredentialManager 读取） */
+  private aiConfigCache: Map<number, { config: AIConfigItem; timestamp: number }> = new Map();
+  private readonly CONFIG_CACHE_TTL = 60000; // 1 分钟缓存
 
   constructor() {
     if (_app) {
@@ -230,15 +282,26 @@ export class DatabaseManager {
   }
 
   /**
-   * 获取单个 AI 配置（带 apiKey）
+   * 获取单个 AI 配置（带 apiKey，使用缓存优化）
    */
   async getAIConfig(id: number): Promise<AIConfigItem | undefined> {
     const config = this.data.aiConfigs.find(c => c.id === id);
     if (!config) return undefined;
 
+    // 检查缓存
+    const cached = this.aiConfigCache.get(id);
+    if (cached && Date.now() - cached.timestamp < this.CONFIG_CACHE_TTL) {
+      return cached.config;
+    }
+
     // 从 CredentialManager 获取 apiKey
     const apiKey = await CredentialManager.getPassword(`${AI_API_KEY_CREDENTIAL_PREFIX}${id}`) || '';
-    return { ...config, apiKey };
+    const result = { ...config, apiKey };
+
+    // 更新缓存
+    this.aiConfigCache.set(id, { config: result, timestamp: Date.now() });
+
+    return result;
   }
 
   /**
@@ -300,6 +363,9 @@ export class DatabaseManager {
       await CredentialManager.savePassword(`${AI_API_KEY_CREDENTIAL_PREFIX}${id}`, apiKey);
     }
 
+    // 清除缓存
+    this.aiConfigCache.delete(id);
+
     this.saveData();
   }
 
@@ -317,6 +383,9 @@ export class DatabaseManager {
 
     this.data.aiConfigs = this.data.aiConfigs.filter(c => c.id !== id);
     await CredentialManager.deletePassword(`${AI_API_KEY_CREDENTIAL_PREFIX}${id}`);
+
+    // 清除缓存
+    this.aiConfigCache.delete(id);
 
     // 如果删除的是当前激活的配置，切换到第一个
     if (this.data.activeAIConfigId === id && this.data.aiConfigs.length > 0) {
@@ -375,25 +444,25 @@ export class DatabaseManager {
     this.saveData();
   }
 
-  // 添加命令到历史（保留最近10条）
+  // 添加命令到历史（保留最近5条，减少 token 消耗）
   addCommandToHistory(tabId: string, command: CommandHistory): void {
     const context = this.getContext(tabId);
     const recentCommands = context.recentCommands || [];
     recentCommands.push(command);
-    // 保留最近10条
-    if (recentCommands.length > 10) {
+    // 保留最近5条（原来10条，减少发送给 AI 的上下文大小）
+    if (recentCommands.length > 5) {
       recentCommands.shift();
     }
     this.updateContext(tabId, { recentCommands });
   }
 
-  // 添加任务步骤
+  // 添加任务步骤（保留最近10条，减少 token 消耗）
   addTaskStep(tabId: string, step: TaskStep): void {
     const context = this.getContext(tabId);
     const taskHistory = context.taskHistory || [];
     taskHistory.push(step);
-    // 保留最近20条步骤
-    if (taskHistory.length > 20) {
+    // 保留最近10条步骤（原来20条，减少上下文大小）
+    if (taskHistory.length > 10) {
       taskHistory.shift();
     }
     this.updateContext(tabId, { taskHistory });

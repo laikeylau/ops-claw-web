@@ -57,42 +57,106 @@ export class GeneralAgent implements Agent {
       onProgress?.([...results]);
     };
 
-    // 按执行模式处理 (这里先用保守的串行处理，确保上下文正确传递和依赖关系)
+    // 智能执行策略：根据任务依赖关系决定串行或并行
+    const independentTasks: number[] = [];
+    const dependentTasks: Map<string, number[]> = new Map();
+
+    // 分析任务依赖关系
     for (let i = 0; i < results.length; i++) {
       const task = results[i];
-      if (task.status === 'completed' || task.status === 'skipped') continue;
-
-      updateTaskStatus(i, { status: 'running' });
-
-      const outcome = await this.executeSubTask(
-        task, 
-        context, 
-        requestConfirmation,
-        (status, error) => updateTaskStatus(i, { status, error })
-      );
-
-      updateTaskStatus(i, { 
-        status: outcome.status, 
-        result: outcome.result, 
-        error: outcome.error 
-      });
-
-      if (!outcome.success) {
-        errors.push(`任务 [${task.description}] 失败: ${outcome.error}`);
-        // 如果失败，将后续所有 pending 的依赖任务置为 skipped
-        for (let j = i + 1; j < results.length; j++) {
-          if (results[j].status === 'pending') {
-            updateTaskStatus(j, { status: 'skipped', error: '由于前置依赖失败而跳过' });
+      if (task.dependencies && task.dependencies.length > 0) {
+        // 有依赖的任务
+        for (const dep of task.dependencies) {
+          if (!dependentTasks.has(dep)) {
+            dependentTasks.set(dep, []);
           }
+          dependentTasks.get(dep)!.push(i);
         }
-        break;
+      } else {
+        // 无依赖的任务可以并行执行
+        independentTasks.push(i);
       }
     }
 
-    const success = results.every(r => r.status === 'completed' || r.status === 'skipped' && errors.length === 0);
+    // 并行执行无依赖的任务（最多 3 个并发）
+    if (independentTasks.length > 1) {
+      const concurrency = Math.min(independentTasks.length, 3);
+      const chunks: number[][] = [];
+      
+      for (let i = 0; i < independentTasks.length; i += concurrency) {
+        chunks.push(independentTasks.slice(i, i + concurrency));
+      }
+
+      for (const chunk of chunks) {
+        const promises = chunk.map(async (index) => {
+          const task = results[index];
+          if (task.status === 'completed' || task.status === 'skipped') return;
+
+          updateTaskStatus(index, { status: 'running' });
+
+          const outcome = await this.executeSubTask(
+            task, 
+            context, 
+            requestConfirmation,
+            (status, error) => updateTaskStatus(index, { status, error })
+          );
+
+          updateTaskStatus(index, { 
+            status: outcome.status, 
+            result: outcome.result, 
+            error: outcome.error 
+          });
+
+          return { index, success: outcome.success, error: outcome.error };
+        });
+
+        const outcomes = await Promise.all(promises);
+        
+        // 检查是否有失败的任务
+        for (const outcome of outcomes) {
+          if (outcome && !outcome.success) {
+            errors.push(`任务 [${results[outcome.index].description}] 失败: ${outcome.error}`);
+          }
+        }
+      }
+    } else {
+      // 单个任务或只有依赖任务，串行执行
+      for (let i = 0; i < results.length; i++) {
+        const task = results[i];
+        if (task.status === 'completed' || task.status === 'skipped') continue;
+
+        updateTaskStatus(i, { status: 'running' });
+
+        const outcome = await this.executeSubTask(
+          task, 
+          context, 
+          requestConfirmation,
+          (status, error) => updateTaskStatus(i, { status, error })
+        );
+
+        updateTaskStatus(i, { 
+          status: outcome.status, 
+          result: outcome.result, 
+          error: outcome.error 
+        });
+
+        if (!outcome.success) {
+          errors.push(`任务 [${task.description}] 失败: ${outcome.error}`);
+          // 如果失败，将后续所有 pending 的依赖任务置为 skipped
+          for (let j = i + 1; j < results.length; j++) {
+            if (results[j].status === 'pending') {
+              updateTaskStatus(j, { status: 'skipped', error: '由于前置依赖失败而跳过' });
+            }
+          }
+          break;
+        }
+      }
+    }
+
+    const success = errors.length === 0;
     return {
       agentName: this.config.name,
-      success: errors.length === 0,
+      success,
       subTasks: results,
       errors,
       durationMs: Date.now() - startTime,

@@ -17,6 +17,11 @@ import { SessionRecovery } from './recovery/SessionRecovery';
 import { PermissionManager } from './tools/PermissionManager';
 import { AgentCoordinator } from './agents/AgentCoordinator';
 import { initializeAgentSystem } from './agents';
+import { CommandLearner } from './command-learner';
+import { StreamingManager } from './streaming-manager';
+import { MemoryManager } from './memory-manager';
+import { RdpManager } from './rdp-manager';
+import { registerRdpIpcHandlers } from './ipc/rdp-ipc';
 
 // IPC Handler 模块（按领域拆分）
 import { IpcDependencies } from './ipc/types';
@@ -25,6 +30,7 @@ import { registerServerIpcHandlers } from './ipc/server-ipc';
 import { registerAiIpcHandlers } from './ipc/ai-ipc';
 import { registerContextIpcHandlers } from './ipc/context-ipc';
 import { registerAgentIpcHandlers } from './ipc/agent-ipc';
+import { registerMemoryIpcHandlers } from './ipc/memory-ipc';
 
 let mainWindow: BrowserWindow | null = null;
 let serverManager: ServerManager;
@@ -39,6 +45,10 @@ let sessionLogger: SessionLogger;
 let sessionRecovery: SessionRecovery;
 let permissionManager: PermissionManager;
 let agentCoordinator: AgentCoordinator;
+let commandLearner: CommandLearner;
+let streamingManager: StreamingManager;
+let memoryManager: MemoryManager;
+let rdpManager: RdpManager;
 
 function createWindow() {
   // 隐藏菜单栏
@@ -101,19 +111,37 @@ app.whenReady().then(() => {
   // 初始化 Agent 系统
   agentCoordinator = initializeAgentSystem(toolExecutor, toolRegistry, aiEngine);
 
+  // 初始化命令学习器
+  commandLearner = new CommandLearner();
+
+  // 初始化流式响应管理器
+  streamingManager = new StreamingManager();
+
+  // 初始化内存管理器
+  memoryManager = new MemoryManager(db);
+
+  // 初始化 RDP 管理器
+  rdpManager = new RdpManager();
+
   createWindow();
+
+  // 设置主窗口引用
+  streamingManager.setMainWindow(mainWindow);
 
   // 注册 IPC Handlers（按领域拆分到独立模块）
   const deps: IpcDependencies = {
     mainWindow, serverManager, aiEngine, db, securityAnalyzer,
     toolRegistry, toolExecutor, budgetTracker, compactEngine,
     sessionLogger, sessionRecovery, permissionManager, agentCoordinator,
+    commandLearner, streamingManager, memoryManager, rdpManager,
   };
   registerSystemIpcHandlers(deps);
   registerServerIpcHandlers(deps);
   registerAiIpcHandlers(deps);
   registerContextIpcHandlers(deps);
   registerAgentIpcHandlers(deps);
+  registerMemoryIpcHandlers(deps);
+  registerRdpIpcHandlers(deps);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -128,6 +156,11 @@ app.on('window-all-closed', () => {
   // 立即写入数据库（绕过 debounce，防止数据丢失）
   db?.flush();
   serverManager?.disconnectAll();
+  rdpManager?.disconnectAll();
+  // 清理管理器
+  streamingManager?.destroy();
+  memoryManager?.destroy();
+  rdpManager?.cleanup();
   if (process.platform !== 'darwin') app.quit();
 });
 

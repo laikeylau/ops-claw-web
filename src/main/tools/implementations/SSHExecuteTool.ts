@@ -51,11 +51,25 @@ export class SSHExecuteTool implements Tool<SSHExecuteInput, SSHExecuteOutput> {
   async execute(input: SSHExecuteInput, context: ToolUseContext): Promise<SSHExecuteOutput> {
     const result: ExecuteResult = await this.serverManager.execute(input.connectionId, input.command);
 
+    // 智能截取输出：保留开头和结尾（关键信息通常在这些位置）
+    const maxOutputLength = 2000;
+    let stdout = result.stdout || '';
+    let stderr = result.stderr || '';
+
+    if (stdout.length > maxOutputLength) {
+      const half = maxOutputLength / 2;
+      stdout = stdout.substring(0, half) + '\n...[输出已截取]...\n' + stdout.substring(stdout.length - half);
+    }
+    if (stderr.length > maxOutputLength) {
+      const half = maxOutputLength / 2;
+      stderr = stderr.substring(0, half) + '\n...[输出已截取]...\n' + stderr.substring(stderr.length - half);
+    }
+
     return {
       success: result.success,
       data: {
-        stdout: result.stdout,
-        stderr: result.stderr,
+        stdout,
+        stderr,
         exitCode: result.exitCode,
       },
       error: result.error,

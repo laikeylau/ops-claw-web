@@ -58,6 +58,42 @@ contextBridge.exposeInMainWorld('electronAPI', {
   aiSetActiveConfig: (id: number) => ipcRenderer.invoke('ai:setActiveConfig', id),
   aiGetActiveConfigId: () => ipcRenderer.invoke('ai:getActiveConfigId'),
 
+  // 命令推荐（学习用户习惯）
+  aiRecommendCommands: (prompt: string) => ipcRenderer.invoke('ai:recommendCommands', prompt),
+  aiFrequentCommands: (limit?: number) => ipcRenderer.invoke('ai:frequentCommands', limit),
+  aiRecentCommands: (limit?: number) => ipcRenderer.invoke('ai:recentCommands', limit),
+
+  // 内存管理
+  memoryStats: () => ipcRenderer.invoke('memory:stats'),
+  memoryCleanup: () => ipcRenderer.invoke('memory:cleanup'),
+  memoryGetConfig: () => ipcRenderer.invoke('memory:getConfig'),
+  memoryUpdateConfig: (config: any) => ipcRenderer.invoke('memory:updateConfig', config),
+
+  // 流式响应
+  streamCreate: (tabId: string, messageId: string) => ipcRenderer.invoke('stream:create', tabId, messageId),
+  streamCancel: (sessionId: string) => ipcRenderer.invoke('stream:cancel', sessionId),
+  streamContent: (sessionId: string) => ipcRenderer.invoke('stream:content', sessionId),
+  onStreamChunk: (callback: (payload: any) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: any) => callback(payload);
+    ipcRenderer.on('ai:stream:chunk', listener);
+    return () => ipcRenderer.removeListener('ai:stream:chunk', listener);
+  },
+  onStreamComplete: (callback: (payload: any) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: any) => callback(payload);
+    ipcRenderer.on('ai:stream:complete', listener);
+    return () => ipcRenderer.removeListener('ai:stream:complete', listener);
+  },
+
+  // RDP 远程桌面
+  rdpIsAvailable: () => ipcRenderer.invoke('rdp:isAvailable'),
+  rdpConnect: (serverId: number, config?: any) => ipcRenderer.invoke('rdp:connect', serverId, config),
+  rdpDisconnect: (sessionId: string) => ipcRenderer.invoke('rdp:disconnect', sessionId),
+  rdpDisconnectAll: () => ipcRenderer.invoke('rdp:disconnectAll'),
+  rdpSessionStatus: (sessionId: string) => ipcRenderer.invoke('rdp:sessionStatus', sessionId),
+  rdpAllSessions: () => ipcRenderer.invoke('rdp:allSessions'),
+  rdpExportFile: (serverId: number) => ipcRenderer.invoke('rdp:exportFile', serverId),
+  rdpOpenExternal: (serverId: number) => ipcRenderer.invoke('rdp:openExternal', serverId),
+
   // 上下文管理
   contextGet: (serverId: number) => ipcRenderer.invoke('context:get', serverId),
   contextUpdate: (serverId: number, updates: any) => ipcRenderer.invoke('context:update', serverId, updates),

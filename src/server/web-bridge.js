@@ -200,6 +200,86 @@
       return apiPost('/agents/confirm', { tabId: tabId, taskId: taskId, isConfirmed: isConfirmed });
     },
     onAgentProgress: function (cb) { return addShellListener('agent:progress', cb); },
+
+    // ===== RDP 远程桌面 =====
+    rdpIsAvailable: function () { return apiGet('/rdp/available'); },
+    rdpConnect: function (serverId, config) { return apiPost('/rdp/connect', { serverId: serverId, config: config }); },
+    rdpDisconnect: function (sessionId) { return apiPost('/rdp/disconnect', { sessionId: sessionId }); },
+    rdpDisconnectAll: function () { return apiPost('/rdp/disconnect-all'); },
+    rdpSessionStatus: function (sessionId) { return apiGet('/rdp/sessions/' + sessionId); },
+    rdpAllSessions: function () { return apiGet('/rdp/sessions'); },
+    rdpExportFile: function (serverId) { return apiGet('/rdp/export/' + serverId); },
+    rdpOpenExternal: function (serverId) { return apiPost('/rdp/open-external', { serverId: serverId }); },
+
+    // ===== 服务器监控 =====
+    monitorSummary: function () { return apiGet('/monitor/summary'); },
+    monitorMetrics: function (serverId, hours) { return apiGet('/monitor/metrics/' + serverId + (hours ? '?hours=' + hours : '')); },
+    monitorLatest: function (serverId) { return apiGet('/monitor/latest/' + serverId); },
+    monitorAlerts: function (serverId, level) {
+      var params = [];
+      if (serverId) params.push('serverId=' + serverId);
+      if (level) params.push('level=' + level);
+      return apiGet('/monitor/alerts' + (params.length ? '?' + params.join('&') : ''));
+    },
+    monitorClearAlerts: function (serverId) { return apiDelete('/monitor/alerts' + (serverId ? '?serverId=' + serverId : '')); },
+    monitorGetConfig: function () { return apiGet('/monitor/config'); },
+    monitorUpdateConfig: function (config) { return apiPut('/monitor/config', config); },
+
+    // ===== 通知系统 =====
+    notificationList: function (options) {
+      var params = [];
+      if (options?.type) params.push('type=' + options.type);
+      if (options?.source) params.push('source=' + options.source);
+      if (options?.unreadOnly) params.push('unreadOnly=true');
+      if (options?.limit) params.push('limit=' + options.limit);
+      if (options?.offset) params.push('offset=' + options.offset);
+      return apiGet('/notifications' + (params.length ? '?' + params.join('&') : ''));
+    },
+    notificationUnreadCount: function () { return apiGet('/notifications/unread-count'); },
+    notificationMarkRead: function (id) { return apiPost('/notifications/' + id + '/read'); },
+    notificationMarkAllRead: function () { return apiPost('/notifications/read-all'); },
+    notificationDelete: function (id) { return apiDelete('/notifications/' + id); },
+    notificationClear: function () { return apiDelete('/notifications'); },
+    notificationGetConfig: function () { return apiGet('/notifications/config'); },
+    notificationUpdateConfig: function (config) { return apiPut('/notifications/config', config); },
+
+    // ===== 备份系统 =====
+    backupList: function () { return apiGet('/backups'); },
+    backupCreate: function (type, description) { return apiPost('/backups', { type: type, description: description }); },
+    backupRestore: function (id) { return apiPost('/backups/' + id + '/restore'); },
+    backupDelete: function (id) { return apiDelete('/backups/' + id); },
+    backupGetConfig: function () { return apiGet('/backups/config'); },
+    backupUpdateConfig: function (config) { return apiPut('/backups/config', config); },
+
+    // ===== 会话录制 =====
+    recordingList: function () { return apiGet('/recordings'); },
+    recordingGet: function (id) { return apiGet('/recordings/' + id); },
+    recordingExport: function (id, format) { return apiGet('/recordings/' + id + '/export?format=' + (format || 'text')); },
+    recordingDelete: function (id) { return apiDelete('/recordings/' + id); },
+    recordingGetConfig: function () { return apiGet('/recordings/config'); },
+    recordingUpdateConfig: function (config) { return apiPut('/recordings/config', config); },
+
+    // ===== 命令学习 =====
+    aiRecommendCommands: function (prompt) { return apiGet('/command-learning/recommend?prompt=' + encodeURIComponent(prompt)); },
+    aiFrequentCommands: function (limit) { return apiGet('/command-learning/frequent' + (limit ? '?limit=' + limit : '')); },
+    aiRecentCommands: function (limit) { return apiGet('/command-learning/recent' + (limit ? '?limit=' + limit : '')); },
+
+    // ===== 命令模板 =====
+    templateList: function (category) { return apiGet('/templates' + (category ? '?category=' + category : '')); },
+    templateCategories: function () { return apiGet('/templates/categories'); },
+    templateSearch: function (query) { return apiGet('/templates/search?q=' + encodeURIComponent(query)); },
+    templatePopular: function (limit) { return apiGet('/templates/popular' + (limit ? '?limit=' + limit : '')); },
+    templateCreate: function (template) { return apiPost('/templates', template); },
+    templateUpdate: function (id, template) { return apiPut('/templates/' + id, template); },
+    templateDelete: function (id) { return apiDelete('/templates/' + id); },
+    templateUse: function (id) { return apiPost('/templates/' + id + '/use'); },
+    templateRender: function (templateId, variables) { return apiPost('/templates/render', { templateId: templateId, variables: variables }); },
+
+    // ===== 内存管理 =====
+    memoryStats: function () { return apiGet('/memory/stats'); },
+    memoryCleanup: function () { return apiPost('/memory/cleanup'); },
+    memoryGetConfig: function () { return apiGet('/memory/config'); },
+    memoryUpdateConfig: function (config) { return apiPut('/memory/config', config); },
   };
 
   // ===== 登录遮罩层 =====

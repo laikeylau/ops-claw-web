@@ -13,6 +13,10 @@ import { PermissionManager } from '../tools/PermissionManager';
 import { AgentCoordinator } from '../agents/AgentCoordinator';
 import { SubTask } from '../agents/Agent';
 import { ToolUseContext } from '../types/tool-context';
+import { CommandLearner } from '../command-learner';
+import { StreamingManager } from '../streaming-manager';
+import { MemoryManager } from '../memory-manager';
+import { RdpManager } from '../rdp-manager';
 
 /**
  * IPC Handler 依赖注入接口
@@ -32,4 +36,8 @@ export interface IpcDependencies {
   sessionRecovery: SessionRecovery;
   permissionManager: PermissionManager;
   agentCoordinator: AgentCoordinator;
+  commandLearner: CommandLearner;
+  streamingManager: StreamingManager;
+  memoryManager: MemoryManager;
+  rdpManager: RdpManager;
 }

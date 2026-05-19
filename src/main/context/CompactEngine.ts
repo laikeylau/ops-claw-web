@@ -32,7 +32,7 @@ export interface CompactResult {
 const DEFAULT_STRATEGY: CompactStrategy = {
   preserveRecentCommands: 3,
   preserveRecentSteps: 5,
-  maxOutputLength: 500,
+  maxOutputLength: 300,     // 减少输出截断长度（原500），节省 token
   useAISummary: true,       // 默认使用 AI 智能摘要
   aiSummaryThreshold: 5,   // 超过5个步骤需要摘要时，用 AI
 };

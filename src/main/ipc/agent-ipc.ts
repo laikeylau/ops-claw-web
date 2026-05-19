@@ -7,7 +7,7 @@ import { IpcDependencies } from './types';
  * 注册 Agent 系统 IPC Handlers
  */
 export function registerAgentIpcHandlers(deps: IpcDependencies): void {
-  const { db, budgetTracker, compactEngine, agentCoordinator, mainWindow } = deps;
+  const { db, budgetTracker, compactEngine, agentCoordinator, mainWindow, commandLearner } = deps;
 
   ipcMain.handle('agent:list', () => {
     return agentCoordinator.getAvailableAgents();
@@ -72,6 +72,16 @@ export function registerAgentIpcHandlers(deps: IpcDependencies): void {
 
     if (result.tokenUsage) {
       budgetTracker.trackUsage(result.tokenUsage.promptTokens, result.tokenUsage.completionTokens);
+    }
+
+    // 记录命令学习（异步，不阻塞返回）
+    const completedTasks = result.subTasks.filter(t => t.status === 'completed' && t.toolInput?.command);
+    for (const task of completedTasks) {
+      commandLearner.recordExecution(
+        userPrompt,
+        task.toolInput.command as string,
+        task.result?.exitCode === 0
+      );
     }
 
     return result;

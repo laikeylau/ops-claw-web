@@ -28,6 +28,15 @@ import { AIContext } from '../main/ai-engine';
 import { CommandHistory } from '../main/database';
 import { SubTask } from '../main/agents/Agent';
 import { ToolUseContext } from '../main/types/tool-context';
+import { RdpManager } from '../main/rdp-manager';
+import { ServerMonitorManager } from '../main/server-monitor';
+import { NotificationManager } from '../main/notification-manager';
+import { BackupManager } from '../main/backup-manager';
+import { SessionRecorder } from '../main/session-recorder';
+import { CommandLearner } from '../main/command-learner';
+import { CommandTemplateManager } from '../main/command-templates';
+import { StreamingManager } from '../main/streaming-manager';
+import { MemoryManager } from '../main/memory-manager';
 
 // ===== 配置 =====
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -53,6 +62,17 @@ const agentCoordinator = initializeAgentSystem(toolExecutor, toolRegistry, aiEng
 toolRegistry.register(new SSHExecuteTool(serverManager));
 toolRegistry.register(new SSHShellExecuteTool(serverManager));
 toolRegistry.register(new AIGenerateTool(aiEngine));
+
+// ===== 初始化新增管理器 =====
+const rdpManager = new RdpManager();
+const serverMonitor = new ServerMonitorManager(serverManager);
+const notificationManager = new NotificationManager();
+const backupManager = new BackupManager();
+const sessionRecorder = new SessionRecorder();
+const commandLearner = new CommandLearner();
+const commandTemplates = new CommandTemplateManager();
+const streamingManager = new StreamingManager();
+const memoryManager = new MemoryManager(db);
 
 // ===== Express 应用 =====
 const app = express();
@@ -629,6 +649,283 @@ app.post('/api/agents/confirm', authMiddleware, (req, res) => {
   res.json(agentCoordinator.resolveConfirmation(tabId, taskId, isConfirmed));
 });
 
+// ===== RDP 远程桌面 =====
+app.get('/api/rdp/available', authMiddleware, (_req, res) => {
+  res.json(rdpManager.getClientInfo());
+});
+
+app.post('/api/rdp/connect', authMiddleware, async (req, res) => {
+  try {
+    const { serverId, config } = req.body;
+    const server = await db.getServerWithPassword(serverId);
+    if (!server) { res.status(404).json({ error: '服务器不存在' }); return; }
+    
+    const rdpConfig = {
+      host: server.host,
+      port: server.port || 3389,
+      username: server.username,
+      password: server.password,
+      ...config,
+    };
+    
+    const result = await rdpManager.connect(serverId, rdpConfig);
+    res.json(result);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/rdp/disconnect', authMiddleware, (req, res) => {
+  const { sessionId } = req.body;
+  res.json({ success: rdpManager.disconnect(sessionId) });
+});
+
+app.get('/api/rdp/sessions', authMiddleware, (_req, res) => {
+  res.json(rdpManager.getAllSessions());
+});
+
+app.get('/api/rdp/sessions/:id', authMiddleware, (req, res) => {
+  res.json(rdpManager.getSessionStatus(req.params.id));
+});
+
+// ===== 服务器监控 =====
+app.get('/api/monitor/summary', authMiddleware, (_req, res) => {
+  res.json(serverMonitor.getSummary());
+});
+
+app.get('/api/monitor/metrics/:serverId', authMiddleware, (req, res) => {
+  const hours = req.query.hours ? parseInt(req.query.hours) : undefined;
+  res.json(serverMonitor.getMetricsHistory(parseInt(req.params.serverId), hours));
+});
+
+app.get('/api/monitor/latest/:serverId', authMiddleware, (req, res) => {
+  res.json(serverMonitor.getLatestMetrics(parseInt(req.params.serverId)));
+});
+
+app.get('/api/monitor/alerts', authMiddleware, (req, res) => {
+  const { serverId, level } = req.query;
+  res.json(serverMonitor.getAlerts(
+    serverId ? parseInt(serverId) : undefined,
+    level
+  ));
+});
+
+app.delete('/api/monitor/alerts', authMiddleware, (req, res) => {
+  const { serverId } = req.query;
+  serverMonitor.clearAlerts(serverId ? parseInt(serverId) : undefined);
+  res.json({ success: true });
+});
+
+app.get('/api/monitor/config', authMiddleware, (_req, res) => {
+  res.json(serverMonitor.getConfig());
+});
+
+app.put('/api/monitor/config', authMiddleware, (req, res) => {
+  serverMonitor.updateConfig(req.body);
+  res.json(serverMonitor.getConfig());
+});
+
+// ===== 通知系统 =====
+app.get('/api/notifications', authMiddleware, (req, res) => {
+  const { type, source, unreadOnly, limit, offset } = req.query;
+  res.json(notificationManager.getNotifications({
+    type,
+    source,
+    unreadOnly: unreadOnly === 'true',
+    limit: limit ? parseInt(limit) : undefined,
+    offset: offset ? parseInt(offset) : undefined,
+  }));
+});
+
+app.get('/api/notifications/unread-count', authMiddleware, (_req, res) => {
+  res.json({ count: notificationManager.getUnreadCount() });
+});
+
+app.post('/api/notifications/:id/read', authMiddleware, (req, res) => {
+  res.json({ success: notificationManager.markAsRead(req.params.id) });
+});
+
+app.post('/api/notifications/read-all', authMiddleware, (_req, res) => {
+  notificationManager.markAllAsRead();
+  res.json({ success: true });
+});
+
+app.delete('/api/notifications/:id', authMiddleware, (req, res) => {
+  res.json({ success: notificationManager.deleteNotification(req.params.id) });
+});
+
+app.delete('/api/notifications', authMiddleware, (_req, res) => {
+  notificationManager.clearNotifications();
+  res.json({ success: true });
+});
+
+app.get('/api/notifications/config', authMiddleware, (_req, res) => {
+  res.json(notificationManager.getConfig());
+});
+
+app.put('/api/notifications/config', authMiddleware, (req, res) => {
+  notificationManager.updateConfig(req.body);
+  res.json(notificationManager.getConfig());
+});
+
+// ===== 备份系统 =====
+app.get('/api/backups', authMiddleware, (_req, res) => {
+  res.json(backupManager.getBackups());
+});
+
+app.post('/api/backups', authMiddleware, async (req, res) => {
+  try {
+    const { type, description } = req.body;
+    const backup = await backupManager.createBackup(type, description);
+    notificationManager.success('备份完成', `备份 ${backup.id} 已创建`, 'backup');
+    res.json(backup);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/backups/:id/restore', authMiddleware, async (req, res) => {
+  try {
+    const success = await backupManager.restoreBackup(req.params.id);
+    notificationManager.info('备份已恢复', `备份 ${req.params.id} 已恢复`, 'backup');
+    res.json({ success });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.delete('/api/backups/:id', authMiddleware, (req, res) => {
+  res.json({ success: backupManager.deleteBackup(req.params.id) });
+});
+
+app.get('/api/backups/config', authMiddleware, (_req, res) => {
+  res.json(backupManager.getConfig());
+});
+
+app.put('/api/backups/config', authMiddleware, (req, res) => {
+  backupManager.updateConfig(req.body);
+  res.json(backupManager.getConfig());
+});
+
+// ===== 会话录制 =====
+app.get('/api/recordings', authMiddleware, (_req, res) => {
+  res.json(sessionRecorder.getRecordings());
+});
+
+app.get('/api/recordings/:id', authMiddleware, (req, res) => {
+  res.json(sessionRecorder.getRecording(req.params.id));
+});
+
+app.get('/api/recordings/:id/export', authMiddleware, (req, res) => {
+  const { format } = req.query;
+  try {
+    if (format === 'html') {
+      const html = sessionRecorder.exportAsHTML(req.params.id);
+      res.type('html').send(html);
+    } else {
+      const text = sessionRecorder.exportAsText(req.params.id);
+      res.type('text').send(text);
+    }
+  } catch (e: any) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.delete('/api/recordings/:id', authMiddleware, (req, res) => {
+  res.json({ success: sessionRecorder.deleteRecording(req.params.id) });
+});
+
+app.get('/api/recordings/config', authMiddleware, (_req, res) => {
+  res.json(sessionRecorder.getConfig());
+});
+
+app.put('/api/recordings/config', authMiddleware, (req, res) => {
+  sessionRecorder.updateConfig(req.body);
+  res.json(sessionRecorder.getConfig());
+});
+
+// ===== 命令学习 =====
+app.get('/api/command-learning/recommend', authMiddleware, (req, res) => {
+  const { prompt } = req.query;
+  res.json(commandLearner.recommendCommands(prompt));
+});
+
+app.get('/api/command-learning/frequent', authMiddleware, (req, res) => {
+  const { limit } = req.query;
+  res.json(commandLearner.getFrequentCommands(limit ? parseInt(limit) : 10));
+});
+
+app.get('/api/command-learning/recent', authMiddleware, (req, res) => {
+  const { limit } = req.query;
+  res.json(commandLearner.getRecentCommands(limit ? parseInt(limit) : 10));
+});
+
+// ===== 命令模板 =====
+app.get('/api/templates', authMiddleware, (req, res) => {
+  const { category } = req.query;
+  res.json(commandTemplates.getTemplates(category));
+});
+
+app.get('/api/templates/categories', authMiddleware, (_req, res) => {
+  res.json(commandTemplates.getCategories());
+});
+
+app.get('/api/templates/search', authMiddleware, (req, res) => {
+  const { q } = req.query;
+  res.json(commandTemplates.searchTemplates(q));
+});
+
+app.get('/api/templates/popular', authMiddleware, (req, res) => {
+  const { limit } = req.query;
+  res.json(commandTemplates.getPopularTemplates(limit ? parseInt(limit) : 10));
+});
+
+app.post('/api/templates', authMiddleware, (req, res) => {
+  const template = commandTemplates.addTemplate(req.body);
+  res.json(template);
+});
+
+app.put('/api/templates/:id', authMiddleware, (req, res) => {
+  res.json({ success: commandTemplates.updateTemplate(req.params.id, req.body) });
+});
+
+app.delete('/api/templates/:id', authMiddleware, (req, res) => {
+  res.json({ success: commandTemplates.deleteTemplate(req.params.id) });
+});
+
+app.post('/api/templates/:id/use', authMiddleware, (req, res) => {
+  commandTemplates.recordUsage(req.params.id);
+  res.json({ success: true });
+});
+
+app.post('/api/templates/render', authMiddleware, (req, res) => {
+  const { templateId, variables } = req.body;
+  const command = commandTemplates.renderTemplate(templateId, variables);
+  if (command) {
+    res.json({ success: true, command });
+  } else {
+    res.status(404).json({ error: '模板不存在' });
+  }
+});
+
+// ===== 内存管理 =====
+app.get('/api/memory/stats', authMiddleware, (_req, res) => {
+  res.json(memoryManager.getStats());
+});
+
+app.post('/api/memory/cleanup', authMiddleware, async (_req, res) => {
+  res.json(await memoryManager.forceCleanup());
+});
+
+app.get('/api/memory/config', authMiddleware, (_req, res) => {
+  res.json(memoryManager.getConfig());
+});
+
+app.put('/api/memory/config', authMiddleware, (req, res) => {
+  memoryManager.updateConfig(req.body);
+  res.json(memoryManager.getConfig());
+});
+
 // ===== 日志 =====
 app.post('/api/log', authMiddleware, (req, res) => {
   const { level, scope, message, meta } = req.body;
@@ -639,7 +936,19 @@ app.post('/api/log', authMiddleware, (req, res) => {
 
 // ===== 健康检查 =====
 app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', uptime: process.uptime() });
+  res.json({ 
+    status: 'ok', 
+    uptime: process.uptime(),
+    features: {
+      ssh: true,
+      rdp: rdpManager.isRdpAvailable(),
+      ai: true,
+      monitoring: true,
+      notifications: true,
+      backup: true,
+      recording: true,
+    }
+  });
 });
 
 // ===== 静态文件服务（前端） =====
