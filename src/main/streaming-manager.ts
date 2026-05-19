@@ -28,7 +28,7 @@ const SESSION_TIMEOUT = 5 * 60 * 1000; // 5 分钟超时
 
 export class StreamingManager {
   private sessions: Map<string, StreamingSession> = new Map();
-  private mainWindow: BrowserWindow | null = null;
+  private mainWindow: any = null;  // 使用 any 类型避免 electron 依赖
   private cleanupTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
@@ -36,7 +36,7 @@ export class StreamingManager {
     this.cleanupTimer = setInterval(() => this.cleanupExpiredSessions(), 60000);
   }
 
-  setMainWindow(window: BrowserWindow | null): void {
+  setMainWindow(window: any | null): void {
     this.mainWindow = window;
   }
 
