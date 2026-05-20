@@ -590,16 +590,25 @@ app.delete('/api/permissions/rules/:id', authMiddleware, (req, res) => {
 app.get('/api/agents', authMiddleware, (_req, res) => { res.json(agentCoordinator.getAvailableAgents()); });
 
 app.post('/api/agents/decompose', authMiddleware, async (req, res) => {
+  const startTime = Date.now();
   try {
     const { prompt, context } = req.body;
     const tabId = context.sessionId;
+    console.log(`[Agent] 收到分解请求: "${prompt.substring(0, 50)}..." tabId=${tabId}`);
+
     const config = await db.getActiveAIConfig();
-    if (!config) { res.status(400).json({ error: '未配置 AI 服务' }); return; }
+    if (!config) {
+      console.log('[Agent] 错误: 未配置 AI 服务');
+      res.status(400).json({ error: '未配置 AI 服务' });
+      return;
+    }
+    console.log(`[Agent] 使用 AI 配置: ${config.name} (${config.model})`);
 
     compactEngine.setAIConfig(config);
 
     const budgetState = budgetTracker.getState();
     if (budgetState.shouldCompact) {
+      console.log('[Agent] 触发上下文压缩');
       const currentContext = db.getContext(tabId);
       const compactResult = await compactEngine.compactWithAISummary(currentContext, currentContext.taskGoal || prompt);
       const newContext = compactEngine.applyCompact(currentContext, compactResult);
@@ -609,13 +618,16 @@ app.post('/api/agents/decompose', authMiddleware, async (req, res) => {
 
     const latestContext = db.getContext(tabId);
     const updatedToolContext = { ...context, sessionContext: latestContext };
+    console.log('[Agent] 开始调用 AI 分解任务...');
     const result = await agentCoordinator.decomposeTask(prompt, updatedToolContext, config);
+    console.log(`[Agent] 分解完成，耗时 ${Date.now() - startTime}ms，子任务数: ${result.subTasks?.length || 0}`);
 
     if (result.tokenUsage) {
       budgetTracker.trackUsage(result.tokenUsage.promptTokens, result.tokenUsage.completionTokens);
     }
     res.json(result);
   } catch (e: any) {
+    console.error(`[Agent] 分解失败，耗时 ${Date.now() - startTime}ms:`, e.message);
     res.status(500).json({ error: e.message });
   }
 });
