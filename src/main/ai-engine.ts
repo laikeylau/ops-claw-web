@@ -217,7 +217,7 @@ ${contextInfo}
 - 如果之前的命令已经切换了目录，后续命令应基于新的目录位置
 - 使用绝对路径可以避免路径混淆问题
 
-返回 JSON 格式：
+返回 json 格式：
 {
   "command": "实际执行的命令",
   "explanation": "用中文简要解释这个命令的作用"
@@ -289,7 +289,7 @@ ${contextInfo}
 - 如果后续命令涉及路径操作，请使用当前工作目录作为基准
 - 保持任务的连贯性，后续命令应该基于当前状态继续推进
 
-返回 JSON 格式：
+返回 json 格式：
 {
   "analysis": "用中文分析命令执行结果，告诉用户当前状态",
   "suggestions": ["建议1", "建议2", "建议3"],
@@ -381,7 +381,7 @@ ${contextInfo}
 
 可用工具：${options.allowedTools.join(', ')}
 
-返回纯 JSON：
+返回纯 json：
 {
   "subTasks": [{"id": "step1", "description": "做什么", "toolName": "ssh:execute", "toolInput": {"command": "实际命令"}}],
   "reasoning": "简短说明思路",
@@ -483,7 +483,7 @@ ${contextInfo}
 - 不要丢失上下文依赖的关键信息
 - 摘要应该让后续任务能够感知之前的结果
 
-返回 JSON 格式：
+返回 json 格式：
 {
   "summary": "一段简洁的摘要，描述之前做了什么",
   "keyFindings": ["发现的关键信息列表，如路径、配置等"],
