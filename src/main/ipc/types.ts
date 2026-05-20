@@ -18,6 +18,7 @@ import { StreamingManager } from '../streaming-manager';
 import { MemoryManager } from '../memory-manager';
 import { RdpManager } from '../rdp-manager';
 import { CommandTemplateManager } from '../command-templates';
+import { ExecutionHistoryManager } from '../execution-history';
 
 /**
  * IPC Handler 依赖注入接口
@@ -42,4 +43,5 @@ export interface IpcDependencies {
   memoryManager: MemoryManager;
   rdpManager: RdpManager;
   commandTemplates: CommandTemplateManager;
+  executionHistory: ExecutionHistoryManager;
 }

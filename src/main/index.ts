@@ -32,6 +32,7 @@ import { registerContextIpcHandlers } from './ipc/context-ipc';
 import { registerAgentIpcHandlers } from './ipc/agent-ipc';
 import { registerMemoryIpcHandlers } from './ipc/memory-ipc';
 import { registerTemplateIpcHandlers } from './ipc/template-ipc';
+import { registerExecutionHistoryIpcHandlers } from './ipc/history-ipc';
 
 let mainWindow: BrowserWindow | null = null;
 let serverManager: ServerManager;
@@ -51,6 +52,7 @@ let streamingManager: StreamingManager;
 let memoryManager: MemoryManager;
 let rdpManager: RdpManager;
 let commandTemplates: CommandTemplateManager;
+let executionHistory: ExecutionHistoryManager;
 
 function createWindow() {
   // 隐藏菜单栏
@@ -138,6 +140,9 @@ app.whenReady().then(() => {
   // 初始化命令模板管理器
   commandTemplates = new CommandTemplateManager();
 
+  // 初始化执行历史管理器
+  executionHistory = new ExecutionHistoryManager();
+
   createWindow();
 
   // 设置主窗口引用
@@ -150,6 +155,7 @@ app.whenReady().then(() => {
     sessionLogger, sessionRecovery, permissionManager, agentCoordinator,
     commandLearner, streamingManager, memoryManager, rdpManager,
     commandTemplates,
+    executionHistory,
   };
   registerSystemIpcHandlers(deps);
   registerServerIpcHandlers(deps);
@@ -159,6 +165,7 @@ app.whenReady().then(() => {
   registerMemoryIpcHandlers(deps);
   registerRdpIpcHandlers(deps);
   registerTemplateIpcHandlers(deps);
+  registerExecutionHistoryIpcHandlers(deps);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

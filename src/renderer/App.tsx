@@ -11,6 +11,7 @@ import { AgentTaskPanel } from './components/AgentTaskPanel';
 import { AIConfigDialog } from './components/AIConfigDialog';
 import { ServerMonitor } from './components/ServerMonitor';
 import { CommandTemplatePanel } from './components/CommandTemplatePanel';
+import { ExecutionHistoryPanel } from './components/ExecutionHistoryPanel';
 import './App.css';
 
 // 在 React 渲染前应用主题，避免闪白
@@ -191,6 +192,7 @@ function App() {
   // 服务器监控面板
   const [showMonitor, setShowMonitor] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   // Agent 执行过程追踪（用于在 AI 聊天中显示每步命令）
   const processedSubTaskIds = useRef<Set<string>>(new Set());
   const agentResultMsgIdRef = useRef<string | null>(null);
@@ -656,6 +658,25 @@ function App() {
         nextCommandReason: analyzeResult.nextCommandReason,
         timestamp: new Date().toISOString()
       });
+
+      // 保存执行记录到历史
+      try {
+        const activeTab = tabs.find(t => t.id === tabId);
+        await window.electronAPI.historyAdd({
+          prompt: userPrompt,
+          command,
+          output: (output || '').substring(0, 5000), // 限制输出长度
+          exitCode: execResult.exitCode ?? 1,
+          analysis: analyzeResult.analysis,
+          suggestions: analyzeResult.suggestions,
+          nextCommand: analyzeResult.nextCommand,
+          nextCommandReason: analyzeResult.nextCommandReason,
+          serverId: activeTab?.serverId,
+          serverName: activeTab?.serverName,
+        });
+      } catch (error) {
+        console.error('保存执行历史失败:', error);
+      }
     } catch (error: any) {
       toast.error(`AI 分析失败：${error.message}`);
     } finally {
@@ -1218,11 +1239,27 @@ function App() {
         }}
       />
 
+      {/* 执行历史面板 */}
+      <ExecutionHistoryPanel
+        visible={showHistory}
+        onClose={() => setShowHistory(false)}
+        onExecute={(command) => {
+          if (mode === 'manual' && activeTab?.shellSessionId) {
+            window.electronAPI.sshShellWrite(activeTab.shellSessionId, `${command}\n`);
+          } else {
+            setInputValue(command);
+            setMode('ai');
+          }
+        }}
+      />
+
       <aside className="bg-gray-800 text-white flex flex-col shrink-0 relative" style={{ width: sidebarWidth }}>
         <header className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
           <h2 className="text-sm font-semibold tracking-wide">服务器</h2>
           <div className="flex gap-1.5">
             <ThemeToggle />
+            <button onClick={() => setShowHistory(true)} title="执行历史"
+              className="w-7 h-7 rounded-full bg-gray-600 hover:bg-orange-500 flex items-center justify-center text-xs transition-colors">📜</button>
             <button onClick={() => setShowTemplates(true)} title="命令模板"
               className="w-7 h-7 rounded-full bg-gray-600 hover:bg-purple-500 flex items-center justify-center text-xs transition-colors">📋</button>
             <button onClick={() => setShowMonitor(true)} title="服务器监控"

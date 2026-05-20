@@ -146,4 +146,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   templateDelete: (id: string) => ipcRenderer.invoke('template:delete', id),
   templateUse: (id: string) => ipcRenderer.invoke('template:use', id),
   templateRender: (templateId: string, variables: Record<string, string>) => ipcRenderer.invoke('template:render', templateId, variables),
+
+  // 执行历史
+  historyList: (options?: any) => ipcRenderer.invoke('history:list', options),
+  historyGet: (id: string) => ipcRenderer.invoke('history:get', id),
+  historyAdd: (record: any) => ipcRenderer.invoke('history:add', record),
+  historyToggleFavorite: (id: string) => ipcRenderer.invoke('history:toggleFavorite', id),
+  historyDelete: (id: string) => ipcRenderer.invoke('history:delete', id),
+  historyClear: (keepFavorites?: boolean) => ipcRenderer.invoke('history:clear', keepFavorites),
+  historyCategories: () => ipcRenderer.invoke('history:categories'),
+  historyTags: () => ipcRenderer.invoke('history:tags'),
+  historyStats: () => ipcRenderer.invoke('history:stats'),
 });

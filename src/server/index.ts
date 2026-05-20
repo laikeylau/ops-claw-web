@@ -35,6 +35,7 @@ import { BackupManager } from '../main/backup-manager';
 import { SessionRecorder } from '../main/session-recorder';
 import { CommandLearner } from '../main/command-learner';
 import { CommandTemplateManager } from '../main/command-templates';
+import { ExecutionHistoryManager } from '../main/execution-history';
 import { StreamingManager } from '../main/streaming-manager';
 import { MemoryManager } from '../main/memory-manager';
 
@@ -71,6 +72,7 @@ const backupManager = new BackupManager();
 const sessionRecorder = new SessionRecorder();
 const commandLearner = new CommandLearner();
 const commandTemplates = new CommandTemplateManager();
+const executionHistory = new ExecutionHistoryManager();
 const streamingManager = new StreamingManager();
 const memoryManager = new MemoryManager(db);
 
@@ -918,6 +920,61 @@ app.post('/api/templates/render', authMiddleware, (req, res) => {
   } else {
     res.status(404).json({ error: '模板不存在' });
   }
+});
+
+// ===== 执行历史 =====
+app.get('/api/history', authMiddleware, (req, res) => {
+  const { category, tag, search, favoritesOnly, limit, offset } = req.query;
+  const options: any = {};
+  if (category) options.category = category as string;
+  if (tag) options.tag = tag as string;
+  if (search) options.search = search as string;
+  if (favoritesOnly === 'true') options.favoritesOnly = true;
+  if (limit) options.limit = parseInt(limit as string);
+  if (offset) options.offset = parseInt(offset as string);
+  res.json(executionHistory.getRecords(options));
+});
+
+app.get('/api/history/categories', authMiddleware, (_req, res) => {
+  res.json(executionHistory.getCategories());
+});
+
+app.get('/api/history/tags', authMiddleware, (_req, res) => {
+  res.json(executionHistory.getTags());
+});
+
+app.get('/api/history/stats', authMiddleware, (_req, res) => {
+  res.json(executionHistory.getStats());
+});
+
+app.get('/api/history/:id', authMiddleware, (req, res) => {
+  const record = executionHistory.getRecord(req.params.id);
+  if (record) {
+    res.json(record);
+  } else {
+    res.status(404).json({ error: '记录不存在' });
+  }
+});
+
+app.post('/api/history', authMiddleware, (req, res) => {
+  const record = executionHistory.addRecord(req.body);
+  res.json(record);
+});
+
+app.post('/api/history/:id/favorite', authMiddleware, (req, res) => {
+  const isFavorite = executionHistory.toggleFavorite(req.params.id);
+  res.json({ success: true, isFavorite });
+});
+
+app.delete('/api/history/:id', authMiddleware, (req, res) => {
+  const success = executionHistory.deleteRecord(req.params.id);
+  res.json({ success });
+});
+
+app.post('/api/history/clear', authMiddleware, (req, res) => {
+  const { keepFavorites } = req.body;
+  executionHistory.clearHistory(keepFavorites !== false);
+  res.json({ success: true });
 });
 
 // ===== 内存管理 =====

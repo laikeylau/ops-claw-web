@@ -287,6 +287,26 @@ export const WEB_BRIDGE_SCRIPT = `/**
     templateUse: function (id) { return apiPost('/templates/' + id + '/use'); },
     templateRender: function (templateId, variables) { return apiPost('/templates/render', { templateId: templateId, variables: variables }); },
 
+    // ===== 执行历史 =====
+    historyList: function (options) {
+      var params = [];
+      if (options && options.category) params.push('category=' + options.category);
+      if (options && options.tag) params.push('tag=' + options.tag);
+      if (options && options.search) params.push('search=' + encodeURIComponent(options.search));
+      if (options && options.favoritesOnly) params.push('favoritesOnly=true');
+      if (options && options.limit) params.push('limit=' + options.limit);
+      if (options && options.offset) params.push('offset=' + options.offset);
+      return apiGet('/history' + (params.length ? '?' + params.join('&') : ''));
+    },
+    historyGet: function (id) { return apiGet('/history/' + id); },
+    historyAdd: function (record) { return apiPost('/history', record); },
+    historyToggleFavorite: function (id) { return apiPost('/history/' + id + '/favorite'); },
+    historyDelete: function (id) { return apiDelete('/history/' + id); },
+    historyClear: function (keepFavorites) { return apiPost('/history/clear', { keepFavorites: keepFavorites }); },
+    historyCategories: function () { return apiGet('/history/categories'); },
+    historyTags: function () { return apiGet('/history/tags'); },
+    historyStats: function () { return apiGet('/history/stats'); },
+
     // ===== 内存管理 =====
     memoryStats: function () { return apiGet('/memory/stats'); },
     memoryCleanup: function () { return apiPost('/memory/cleanup'); },
