@@ -13,23 +13,18 @@ interface CommandTemplate {
   usageCount: number;
 }
 
+interface TemplateCategory {
+  id: string;
+  name: string;
+  icon: string;
+  description: string;
+}
+
 interface CommandTemplatePanelProps {
   visible: boolean;
   onClose: () => void;
   onExecute: (command: string) => void;
 }
-
-const CATEGORY_LABELS: Record<string, string> = {
-  system: '🖥️ 系统',
-  docker: '🐳 Docker',
-  network: '🌐 网络',
-  disk: '💾 磁盘',
-  process: '⚙️ 进程',
-  service: '🔧 服务',
-  security: '🔒 安全',
-  git: '📦 Git',
-  custom: '📝 自定义',
-};
 
 export const CommandTemplatePanel: React.FC<CommandTemplatePanelProps> = ({
   visible,
@@ -37,7 +32,7 @@ export const CommandTemplatePanel: React.FC<CommandTemplatePanelProps> = ({
   onExecute,
 }) => {
   const [templates, setTemplates] = useState<CommandTemplate[]>([]);
-  const [categories, setCategories] = useState<string[]>([]);
+  const [categories, setCategories] = useState<TemplateCategory[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
@@ -92,8 +87,8 @@ export const CommandTemplatePanel: React.FC<CommandTemplatePanelProps> = ({
   };
 
   // 切换分类
-  const handleCategoryChange = (category: string) => {
-    setSelectedCategory(category);
+  const handleCategoryChange = (categoryId: string) => {
+    setSelectedCategory(categoryId);
     setSearchQuery('');
   };
 
@@ -216,15 +211,15 @@ export const CommandTemplatePanel: React.FC<CommandTemplatePanelProps> = ({
             </button>
             {categories.map(cat => (
               <button
-                key={cat}
-                onClick={() => handleCategoryChange(cat)}
+                key={cat.id}
+                onClick={() => handleCategoryChange(cat.id)}
                 className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                  selectedCategory === cat
+                  selectedCategory === cat.id
                     ? 'bg-green-500 text-white'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
               >
-                {CATEGORY_LABELS[cat] || cat}
+                {cat.icon} {cat.name}
               </button>
             ))}
           </div>
@@ -256,7 +251,7 @@ export const CommandTemplatePanel: React.FC<CommandTemplatePanelProps> = ({
                   >
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-sm font-medium text-gray-800">
-                        {CATEGORY_LABELS[template.category]?.split(' ')[0]} {template.name}
+                        {categories.find(c => c.id === template.category)?.icon || '📋'} {template.name}
                       </span>
                       <span className="text-[10px] text-gray-400">
                         {template.usageCount > 0 && `用了 ${template.usageCount} 次`}
