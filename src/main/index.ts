@@ -64,6 +64,16 @@ function createWindow() {
     },
   });
 
+  // 防止页面导航跳转（解决输入命令后页面变空白的问题）
+  mainWindow.webContents.on('will-navigate', (event) => {
+    event.preventDefault();
+  });
+
+  // 阻止新窗口打开
+  mainWindow.webContents.setWindowOpenHandler(() => {
+    return { action: 'deny' };
+  });
+
   // 使用 app.isPackaged 检测开发/生产模式 (比 NODE_ENV 更可靠)
   // 开发模式: app.isPackaged = false
   // 生产模式: app.isPackaged = true (打包后)
