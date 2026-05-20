@@ -31,6 +31,7 @@ import { registerAiIpcHandlers } from './ipc/ai-ipc';
 import { registerContextIpcHandlers } from './ipc/context-ipc';
 import { registerAgentIpcHandlers } from './ipc/agent-ipc';
 import { registerMemoryIpcHandlers } from './ipc/memory-ipc';
+import { registerTemplateIpcHandlers } from './ipc/template-ipc';
 
 let mainWindow: BrowserWindow | null = null;
 let serverManager: ServerManager;
@@ -49,6 +50,7 @@ let commandLearner: CommandLearner;
 let streamingManager: StreamingManager;
 let memoryManager: MemoryManager;
 let rdpManager: RdpManager;
+let commandTemplates: CommandTemplateManager;
 
 function createWindow() {
   // 隐藏菜单栏
@@ -133,6 +135,9 @@ app.whenReady().then(() => {
   // 初始化 RDP 管理器
   rdpManager = new RdpManager();
 
+  // 初始化命令模板管理器
+  commandTemplates = new CommandTemplateManager();
+
   createWindow();
 
   // 设置主窗口引用
@@ -144,6 +149,7 @@ app.whenReady().then(() => {
     toolRegistry, toolExecutor, budgetTracker, compactEngine,
     sessionLogger, sessionRecovery, permissionManager, agentCoordinator,
     commandLearner, streamingManager, memoryManager, rdpManager,
+    commandTemplates,
   };
   registerSystemIpcHandlers(deps);
   registerServerIpcHandlers(deps);
@@ -152,6 +158,7 @@ app.whenReady().then(() => {
   registerAgentIpcHandlers(deps);
   registerMemoryIpcHandlers(deps);
   registerRdpIpcHandlers(deps);
+  registerTemplateIpcHandlers(deps);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

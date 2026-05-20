@@ -10,6 +10,7 @@ import { ThemeToggle, initTheme } from './components/ThemeToggle';
 import { AgentTaskPanel } from './components/AgentTaskPanel';
 import { AIConfigDialog } from './components/AIConfigDialog';
 import { ServerMonitor } from './components/ServerMonitor';
+import { CommandTemplatePanel } from './components/CommandTemplatePanel';
 import './App.css';
 
 // 在 React 渲染前应用主题，避免闪白
@@ -189,6 +190,7 @@ function App() {
   const [decomposingTabIds, setDecomposingTabIds] = useState<Set<string>>(new Set());
   // 服务器监控面板
   const [showMonitor, setShowMonitor] = useState(false);
+  const [showTemplates, setShowTemplates] = useState(false);
   // Agent 执行过程追踪（用于在 AI 聊天中显示每步命令）
   const processedSubTaskIds = useRef<Set<string>>(new Set());
   const agentResultMsgIdRef = useRef<string | null>(null);
@@ -1202,11 +1204,27 @@ function App() {
         onClose={() => setShowMonitor(false)}
       />
 
+      {/* 命令模板面板 */}
+      <CommandTemplatePanel
+        visible={showTemplates}
+        onClose={() => setShowTemplates(false)}
+        onExecute={(command) => {
+          if (mode === 'manual' && activeTab?.shellSessionId) {
+            window.electronAPI.sshShellWrite(activeTab.shellSessionId, `${command}\n`);
+          } else {
+            setInputValue(command);
+            setMode('ai');
+          }
+        }}
+      />
+
       <aside className="bg-gray-800 text-white flex flex-col shrink-0 relative" style={{ width: sidebarWidth }}>
         <header className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
           <h2 className="text-sm font-semibold tracking-wide">服务器</h2>
           <div className="flex gap-1.5">
             <ThemeToggle />
+            <button onClick={() => setShowTemplates(true)} title="命令模板"
+              className="w-7 h-7 rounded-full bg-gray-600 hover:bg-purple-500 flex items-center justify-center text-xs transition-colors">📋</button>
             <button onClick={() => setShowMonitor(true)} title="服务器监控"
               className="w-7 h-7 rounded-full bg-gray-600 hover:bg-blue-500 flex items-center justify-center text-xs transition-colors">📊</button>
             <button onClick={openSettings} title="AI 设置"

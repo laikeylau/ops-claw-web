@@ -135,4 +135,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('agent:progress', listener);
     return () => ipcRenderer.removeListener('agent:progress', listener);
   },
+
+  // 命令模板
+  templateList: (category?: string) => ipcRenderer.invoke('template:list', category),
+  templateCategories: () => ipcRenderer.invoke('template:categories'),
+  templateSearch: (query: string) => ipcRenderer.invoke('template:search', query),
+  templatePopular: (limit?: number) => ipcRenderer.invoke('template:popular', limit),
+  templateCreate: (template: any) => ipcRenderer.invoke('template:create', template),
+  templateUpdate: (id: string, template: any) => ipcRenderer.invoke('template:update', id, template),
+  templateDelete: (id: string) => ipcRenderer.invoke('template:delete', id),
+  templateUse: (id: string) => ipcRenderer.invoke('template:use', id),
+  templateRender: (templateId: string, variables: Record<string, string>) => ipcRenderer.invoke('template:render', templateId, variables),
 });

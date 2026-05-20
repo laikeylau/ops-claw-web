@@ -17,6 +17,7 @@ import { CommandLearner } from '../command-learner';
 import { StreamingManager } from '../streaming-manager';
 import { MemoryManager } from '../memory-manager';
 import { RdpManager } from '../rdp-manager';
+import { CommandTemplateManager } from '../command-templates';
 
 /**
  * IPC Handler 依赖注入接口
@@ -40,4 +41,5 @@ export interface IpcDependencies {
   streamingManager: StreamingManager;
   memoryManager: MemoryManager;
   rdpManager: RdpManager;
+  commandTemplates: CommandTemplateManager;
 }
