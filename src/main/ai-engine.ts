@@ -230,7 +230,6 @@ ${contextInfo}
           { role: 'system', content: systemPrompt },
           { role: 'user', content: prompt },
         ],
-        response_format: { type: 'json_object' },
         temperature: 0.1,
         stream: true,
       });
@@ -242,7 +241,10 @@ ${contextInfo}
         content += delta;
       }
 
-      const parsed = JSON.parse(content || '{}');
+      // 尝试提取 JSON 部分（AI 可能在 JSON 前后添加了其他文字）
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      const jsonStr = jsonMatch ? jsonMatch[0] : '{}';
+      const parsed = JSON.parse(jsonStr);
       return {
         ...parsed,
       };
@@ -315,7 +317,6 @@ ${output}
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userMessage },
         ],
-        response_format: { type: 'json_object' },
         temperature: 0.2,
         stream: true,
       });
@@ -327,7 +328,10 @@ ${output}
         content += delta;
       }
 
-      const result = JSON.parse(content || '{}');
+      // 尝试提取 JSON 部分
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      const jsonStr = jsonMatch ? jsonMatch[0] : '{}';
+      const result = JSON.parse(jsonStr);
       return {
         analysis: result.analysis || '命令已执行完成。',
         suggestions: result.suggestions || [],
@@ -395,7 +399,6 @@ ${contextInfo}
           { role: 'system', content: systemPrompt },
           { role: 'user', content: prompt },
         ],
-        response_format: { type: 'json_object' },
         temperature: 0.1,
         stream: true,
       });
@@ -412,7 +415,10 @@ ${contextInfo}
         return { subTasks: [], reasoning: 'AI 未返回有效响应', suggestedAgent: 'general' };
       }
 
-      const parsed = JSON.parse(content);
+      // 尝试提取 JSON 部分
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      const jsonStr = jsonMatch ? jsonMatch[0] : content;
+      const parsed = JSON.parse(jsonStr);
 
       // 如果没有 subTasks，则视为通用对话，返回空数组
       const subTasksRaw = Array.isArray(parsed.subTasks) ? parsed.subTasks : [];
@@ -506,7 +512,6 @@ ${historyContent}
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userMessage },
         ],
-        response_format: { type: 'json_object' },
         temperature: 0.1,
         stream: true,
       });
@@ -518,7 +523,10 @@ ${historyContent}
         content += delta;
       }
 
-      const parsed = JSON.parse(content || '{}');
+      // 尝试提取 JSON 部分
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      const jsonStr = jsonMatch ? jsonMatch[0] : '{}';
+      const parsed = JSON.parse(jsonStr);
 
       return {
         summary: parsed.summary || '',
