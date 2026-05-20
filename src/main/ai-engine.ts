@@ -223,7 +223,8 @@ ${contextInfo}
   "explanation": "用中文简要解释这个命令的作用"
 }`;
 
-      const response = await client.chat.completions.create({
+      // 使用流式请求（兼容要求 stream=true 的 API 代理）
+      const stream = await client.chat.completions.create({
         model: config.model,
         messages: [
           { role: 'system', content: systemPrompt },
@@ -231,16 +232,19 @@ ${contextInfo}
         ],
         response_format: { type: 'json_object' },
         temperature: 0.1,
+        stream: true,
       });
 
-      const content = response.choices[0]?.message?.content || '{}';
-      const parsed = JSON.parse(content);
+      // 累积流式响应
+      let content = '';
+      for await (const chunk of stream) {
+        const delta = chunk.choices[0]?.delta?.content || '';
+        content += delta;
+      }
+
+      const parsed = JSON.parse(content || '{}');
       return {
         ...parsed,
-        tokenUsage: response.usage ? {
-          promptTokens: response.usage.prompt_tokens,
-          completionTokens: response.usage.completion_tokens,
-        } : undefined,
       };
     } catch (error: any) {
       throw new Error(`AI 命令生成失败：${error.message}`);
@@ -304,7 +308,8 @@ ${output}
 
 请分析结果并给出建议。`;
 
-      const response = await client.chat.completions.create({
+      // 使用流式请求（兼容要求 stream=true 的 API 代理）
+      const stream = await client.chat.completions.create({
         model: config.model,
         messages: [
           { role: 'system', content: systemPrompt },
@@ -312,19 +317,22 @@ ${output}
         ],
         response_format: { type: 'json_object' },
         temperature: 0.2,
+        stream: true,
       });
 
-      const content = response.choices[0]?.message?.content || '{}';
-      const result = JSON.parse(content);
+      // 累积流式响应
+      let content = '';
+      for await (const chunk of stream) {
+        const delta = chunk.choices[0]?.delta?.content || '';
+        content += delta;
+      }
+
+      const result = JSON.parse(content || '{}');
       return {
         analysis: result.analysis || '命令已执行完成。',
         suggestions: result.suggestions || [],
         nextCommand: result.nextCommand,
         nextCommandReason: result.nextCommandReason,
-        tokenUsage: response.usage ? {
-          promptTokens: response.usage.prompt_tokens,
-          completionTokens: response.usage.completion_tokens,
-        } : undefined,
       };
     } catch (error: any) {
       throw new Error(`AI 结果分析失败：${error.message}`);
@@ -380,7 +388,8 @@ ${contextInfo}
   "suggestedAgent": "general"
 }`;
 
-      const response = await client.chat.completions.create({
+      // 使用流式请求（兼容要求 stream=true 的 API 代理）
+      const stream = await client.chat.completions.create({
         model: config.model,
         messages: [
           { role: 'system', content: systemPrompt },
@@ -388,9 +397,21 @@ ${contextInfo}
         ],
         response_format: { type: 'json_object' },
         temperature: 0.1,
+        stream: true,
       });
 
-      const content = response.choices[0]?.message?.content || '{}';
+      // 累积流式响应
+      let content = '';
+      for await (const chunk of stream) {
+        const delta = chunk.choices[0]?.delta?.content || '';
+        content += delta;
+      }
+
+      // 如果流式响应为空，返回空结果
+      if (!content || content.trim() === '') {
+        return { subTasks: [], reasoning: 'AI 未返回有效响应', suggestedAgent: 'general' };
+      }
+
       const parsed = JSON.parse(content);
 
       // 如果没有 subTasks，则视为通用对话，返回空数组
@@ -407,10 +428,6 @@ ${contextInfo}
         })),
         reasoning: parsed.reasoning || '',
         suggestedAgent: parsed.suggestedAgent || 'general',
-        tokenUsage: response.usage ? {
-          promptTokens: response.usage.prompt_tokens,
-          completionTokens: response.usage.completion_tokens,
-        } : undefined,
       };
     } catch (error: any) {
       throw new Error(`AI 任务分解失败：${error.message}`);
@@ -482,7 +499,8 @@ ${historyContent}
 
 请生成智能摘要。`;
 
-      const response = await client.chat.completions.create({
+      // 使用流式请求（兼容要求 stream=true 的 API 代理）
+      const stream = await client.chat.completions.create({
         model: config.model,
         messages: [
           { role: 'system', content: systemPrompt },
@@ -490,25 +508,23 @@ ${historyContent}
         ],
         response_format: { type: 'json_object' },
         temperature: 0.1,
+        stream: true,
       });
 
-      const content = response.choices[0]?.message?.content || '{}';
-      const parsed = JSON.parse(content);
-
-      // 追踪 Token 消耗
-      if (response.usage) {
-        // 摘要生成的 Token 也计入预算
+      // 累积流式响应
+      let content = '';
+      for await (const chunk of stream) {
+        const delta = chunk.choices[0]?.delta?.content || '';
+        content += delta;
       }
+
+      const parsed = JSON.parse(content || '{}');
 
       return {
         summary: parsed.summary || '',
         keyFindings: parsed.keyFindings || [],
         successfulCommands: parsed.successfulCommands || [],
         failedCommands: parsed.failedCommands || [],
-        tokenUsage: response.usage ? {
-          promptTokens: response.usage.prompt_tokens,
-          completionTokens: response.usage.completion_tokens,
-        } : undefined,
       };
     } catch (error: any) {
       // 摘要失败时返回空摘要，不影响主流程
