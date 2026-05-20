@@ -742,6 +742,12 @@ function App() {
             }
           );
 
+          // 防御性检查：decomposition 可能为 null 或异常
+          if (!decomposition) {
+            toast.error('AI 任务分解返回为空，请检查 AI 配置');
+            return;
+          }
+
           const agentMsgId = Date.now().toString() + '-agent';
         const agentMessage = {
           id: agentMsgId,
@@ -749,7 +755,7 @@ function App() {
           content: decomposition.reasoning || '正在制定计划...',
           agentResult: {
             agentName: decomposition.suggestedAgent || 'general',
-            subTasks: decomposition.subTasks,
+            subTasks: Array.isArray(decomposition.subTasks) ? decomposition.subTasks : [],
             userPrompt: prompt,  // 保存用户原始意图，用于执行和分析
             success: false,
             errors: [],
@@ -1417,8 +1423,9 @@ function App() {
                     <div className="flex flex-wrap gap-2 shrink-0 justify-end">
                       {quickPrompts.slice(0, 3).map((prompt) => (
                         <button 
+                          type="button"
                           key={prompt} 
-                          onClick={() => void sendMessage(prompt)}
+                          onClick={(e) => { e.preventDefault(); sendMessage(prompt).catch(() => {}); }}
                           disabled={decomposingTabIds.has(activeTabId) || executingAgentTabIds.has(activeTabId)}
                           className="px-2.5 py-1 rounded-full border border-gray-200 bg-white hover:bg-gray-50 text-xs text-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
                           {prompt}
@@ -1445,12 +1452,13 @@ function App() {
                     </div>
                     <div className="flex flex-col gap-2 shrink-0">
                       <button 
-                        onClick={() => void sendMessage()}
+                        type="button"
+                        onClick={(e) => { e.preventDefault(); sendMessage().catch(() => {}); }}
                         disabled={decomposingTabIds.has(activeTabId) || executingAgentTabIds.has(activeTabId)}
                         className="px-5 py-2 bg-green-500 hover:bg-green-600 disabled:bg-gray-300 text-white text-sm font-medium rounded-md transition-colors">
                         {decomposingTabIds.has(activeTabId) ? '分解中' : executingAgentTabIds.has(activeTabId) ? '执行中' : '发送'}
                       </button>
-                      <button onClick={() => setMode('manual')}
+                      <button type="button" onClick={() => setMode('manual')}
                         className="px-5 py-2 border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 text-xs font-medium rounded-md transition-colors">转到人工终端</button>
                     </div>
                   </div>
