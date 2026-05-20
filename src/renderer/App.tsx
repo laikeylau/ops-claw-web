@@ -727,8 +727,8 @@ function App() {
           const activeTab = tabs.find(t => t.id === activeTabId)!;
           const currentContext = await window.electronAPI.contextGet(activeTabId);
 
-          // 使用 Agent 分解任务
-          const decomposition = await window.electronAPI.agentDecompose(
+          // 使用 Agent 分解任务（添加超时机制）
+          const decomposePromise = window.electronAPI.agentDecompose(
             prompt,
             {
               sessionId: activeTabId,
@@ -742,9 +742,24 @@ function App() {
             }
           );
 
+          // 60秒超时
+          const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('AI 分解任务超时（60秒），请检查 AI 配置或网络连接')), 60000);
+          });
+
+          const decomposition = await Promise.race([decomposePromise, timeoutPromise]);
+
+          console.log('[Agent] decompose response:', decomposition);
+
           // 防御性检查：decomposition 可能为 null 或异常
           if (!decomposition) {
             toast.error('AI 任务分解返回为空，请检查 AI 配置');
+            return;
+          }
+
+          // 检查服务器返回的错误
+          if (decomposition.error) {
+            toast.error(`AI 分解失败: ${decomposition.error}`);
             return;
           }
 
