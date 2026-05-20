@@ -7,6 +7,18 @@
 (function () {
   if (window.electronAPI) return; // Electron 模式，跳过
 
+  // ===== 全局错误处理 - 防止页面白屏 =====
+  window.addEventListener('error', function (event) {
+    console.error('[WebBridge] 全局错误:', event.error || event.message);
+    // 阻止错误导致页面崩溃
+    event.preventDefault();
+  });
+  window.addEventListener('unhandledrejection', function (event) {
+    console.error('[WebBridge] 未处理的 Promise 拒绝:', event.reason);
+    // 阻止未处理的 Promise 拒绝导致页面崩溃
+    event.preventDefault();
+  });
+
   var API_BASE = window.location.origin + '/api';
   var authToken = localStorage.getItem('opsclaw_token') || '';
   var socket = null;
